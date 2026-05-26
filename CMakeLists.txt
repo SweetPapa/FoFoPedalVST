@@ -68,6 +68,7 @@ target_sources(VROOM PRIVATE
     Source/PluginEditor.cpp
     Source/dsp/Saturator.cpp
     Source/dsp/ToneStack.cpp
+    Source/dsp/Sag.cpp
 )
 
 target_include_directories(VROOM PRIVATE Source)

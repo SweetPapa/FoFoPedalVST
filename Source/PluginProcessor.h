@@ -5,6 +5,7 @@
 
 #include "dsp/Saturator.h"
 #include "dsp/ToneStack.h"
+#include "dsp/Sag.h"
 
 namespace vroom
 {
@@ -60,9 +61,6 @@ public:
 
     juce::AudioProcessorValueTreeState& getAPVTS() noexcept { return apvts; }
 
-    // Read-and-reset peak meters. Each call atomically swaps to 0 and returns
-    // the max signal level observed since the previous read. Linear scale
-    // (1.0 = 0 dBFS). The editor polls these on a UI timer.
     float fetchInputPeakAndReset()  noexcept { return inputPeakMax .exchange (0.0f); }
     float fetchOutputPeakAndReset() noexcept { return outputPeakMax.exchange (0.0f); }
 
@@ -74,13 +72,25 @@ private:
     std::atomic<float>* inputDbParam     { nullptr };
     std::atomic<float>* driveParam       { nullptr };
     std::atomic<float>* characterParam   { nullptr };
+    std::atomic<float>* bodyParam        { nullptr };
+    std::atomic<float>* toneParam        { nullptr };
+    std::atomic<float>* sagParam         { nullptr };
+    std::atomic<float>* blendParam       { nullptr };
     std::atomic<float>* levelDbParam     { nullptr };
 
     vroom::ToneStack tone;
     vroom::Saturator saturator;
+    vroom::Sag       sag;
 
-    juce::SmoothedValue<float> inputGainSmoothed { 1.0f };
+    juce::SmoothedValue<float> inputGainSmoothed  { 1.0f };
     juce::SmoothedValue<float> outputGainSmoothed { 1.0f };
+    juce::SmoothedValue<float> blendSmoothed      { 0.7f };
+
+    // Dry tap that runs parallel to the wet chain (Pre-HPF → drive → DC → Sag
+    // → Body → Tone). Delayed to match the wet path's oversampling latency so
+    // the parallel sum stays phase-coherent and we don't get comb filtering.
+    juce::AudioBuffer<float> dryBuffer;
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> dryDelay { 64 };
 
     std::atomic<float> inputPeakMax  { 0.0f };
     std::atomic<float> outputPeakMax { 0.0f };

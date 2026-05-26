@@ -25,17 +25,23 @@ private:
     juce::WebSliderRelay inputRelay     { "input"     };
     juce::WebSliderRelay driveRelay     { "drive"     };
     juce::WebSliderRelay characterRelay { "character" };
+    juce::WebSliderRelay bodyRelay      { "body"      };
+    juce::WebSliderRelay toneRelay      { "tone"      };
+    juce::WebSliderRelay sagRelay       { "sag"       };
+    juce::WebSliderRelay blendRelay     { "blend"     };
     juce::WebSliderRelay levelRelay     { "level"     };
 
     juce::WebSliderParameterAttachment inputAttachment;
     juce::WebSliderParameterAttachment driveAttachment;
     juce::WebSliderParameterAttachment characterAttachment;
+    juce::WebSliderParameterAttachment bodyAttachment;
+    juce::WebSliderParameterAttachment toneAttachment;
+    juce::WebSliderParameterAttachment sagAttachment;
+    juce::WebSliderParameterAttachment blendAttachment;
     juce::WebSliderParameterAttachment levelAttachment;
 
     juce::WebBrowserComponent webView;
 
-    // Displayed meter values with slow-release decay so the bar stays readable
-    // even on fast transients.
     float displayedInputPeak  { 0.0f };
     float displayedOutputPeak { 0.0f };
 

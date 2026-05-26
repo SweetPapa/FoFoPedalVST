@@ -89,27 +89,42 @@ VroomAudioProcessor::VroomAudioProcessor()
     inputDbParam   = apvts.getRawParameterValue (ParamID::input);
     driveParam     = apvts.getRawParameterValue (ParamID::drive);
     characterParam = apvts.getRawParameterValue (ParamID::character);
+    bodyParam      = apvts.getRawParameterValue (ParamID::body);
+    toneParam      = apvts.getRawParameterValue (ParamID::tone);
+    sagParam       = apvts.getRawParameterValue (ParamID::sag);
+    blendParam     = apvts.getRawParameterValue (ParamID::blend);
     levelDbParam   = apvts.getRawParameterValue (ParamID::level);
 }
 
 void VroomAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    juce::dsp::ProcessSpec spec {
-        sampleRate,
-        (juce::uint32) samplesPerBlock,
-        (juce::uint32) juce::jmax (1, getTotalNumOutputChannels())
-    };
+    const auto numCh = (juce::uint32) juce::jmax (1, getTotalNumOutputChannels());
+    juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) samplesPerBlock, numCh };
 
     tone.prepare (spec);
     saturator.prepare (spec);
+    sag.prepare (spec);
 
     // Electric Guitar default voicing (spec §5). Mode switching arrives in Phase 5.
     tone.setPreHPFHz (90.0f);
+    tone.setBodyCenterHz (300.0f);
+
+    // Dry buffer + latency-compensated delay line for the parallel blend.
+    dryBuffer.setSize ((int) numCh, samplesPerBlock, false, true, true);
+
+    // Max needs to cover the worst-case oversampling latency. Oversampler at
+    // 8× gives a handful of base-rate samples; 64 is comfortably above the
+    // ceiling for any reasonable filter design.
+    dryDelay.setMaximumDelayInSamples (64);
+    dryDelay.prepare (spec);
+    dryDelay.setDelay ((float) saturator.getLatencySamples());
 
     inputGainSmoothed .reset (sampleRate, 0.02);
     outputGainSmoothed.reset (sampleRate, 0.02);
+    blendSmoothed     .reset (sampleRate, 0.02);
     inputGainSmoothed .setCurrentAndTargetValue (juce::Decibels::decibelsToGain (inputDbParam ? inputDbParam->load() : 0.0f));
     outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (levelDbParam ? levelDbParam->load() : 0.0f));
+    blendSmoothed     .setCurrentAndTargetValue ((blendParam ? blendParam->load() : 70.0f) * 0.01f);
 
     setLatencySamples (saturator.getLatencySamples());
 }
@@ -118,6 +133,8 @@ void VroomAudioProcessor::releaseResources()
 {
     tone.reset();
     saturator.reset();
+    sag.reset();
+    dryDelay.reset();
 }
 
 bool VroomAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -139,27 +156,29 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     for (auto i = totalIn; i < totalOut; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // Push current parameter values into smoothers / DSP blocks.
-    inputGainSmoothed .setTargetValue (juce::Decibels::decibelsToGain (inputDbParam->load()));
-    outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (levelDbParam->load()));
-
-    saturator.setDrive01     ((driveParam     ? driveParam    ->load() : 0.0f) * 0.01f);
-    saturator.setCharacter01 ((characterParam ? characterParam->load() : 0.0f) * 0.01f);
-
     const int nS = buffer.getNumSamples();
 
-    // Capture input peak BEFORE any processing — answers "is signal arriving?"
+    // ── Input peak (before any processing) ────────────────────────────────
     {
         float peak = 0.0f;
         for (int ch = 0; ch < totalOut; ++ch)
             peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, nS));
-
-        // Lock-free max: only overwrite if our new sample is bigger.
         float cur = inputPeakMax.load (std::memory_order_relaxed);
         while (peak > cur && ! inputPeakMax.compare_exchange_weak (cur, peak, std::memory_order_release, std::memory_order_relaxed)) {}
     }
 
-    // Input trim — advance smoother once per sample-frame, apply to every channel.
+    // ── Push live parameter values into DSP blocks ─────────────────────────
+    inputGainSmoothed .setTargetValue (juce::Decibels::decibelsToGain (inputDbParam->load()));
+    outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (levelDbParam->load()));
+    blendSmoothed     .setTargetValue (blendParam->load() * 0.01f);
+
+    saturator.setDrive01     (driveParam    ->load() * 0.01f);
+    saturator.setCharacter01 (characterParam->load() * 0.01f);
+    tone.setBody01 (bodyParam->load() * 0.01f);
+    tone.setTone01 (toneParam->load() * 0.01f);
+    sag .setSag01  (sagParam ->load() * 0.01f);
+
+    // ── Input trim ─────────────────────────────────────────────────────────
     for (int n = 0; n < nS; ++n)
     {
         const float g = inputGainSmoothed.getNextValue();
@@ -167,10 +186,37 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             buffer.getWritePointer (ch)[n] *= g;
     }
 
-    tone.processPre (buffer);
-    saturator.process (buffer);
-    tone.processPost (buffer);
+    // ── Split: copy trimmed input into dryBuffer BEFORE wet processing ─────
+    for (int ch = 0; ch < totalOut; ++ch)
+        dryBuffer.copyFrom (ch, 0, buffer, ch, 0, nS);
 
+    // ── Wet chain (spec §3) ────────────────────────────────────────────────
+    tone.processPre (buffer);          // Pre-HPF (tighten lows)
+    saturator.process (buffer);        // Oversampled asymmetric cascaded clip
+    tone.processDCBlock (buffer);      // Kill the bias-induced DC offset
+    sag.process (buffer);              // Tube-amp supply sag / bloom
+    tone.processBodyAndTone (buffer);  // Body EQ + Tone LPF
+
+    // ── Dry path latency compensation ──────────────────────────────────────
+    {
+        juce::dsp::AudioBlock<float> dryBlock (dryBuffer.getArrayOfWritePointers(),
+                                               (size_t) totalOut, 0, (size_t) nS);
+        juce::dsp::ProcessContextReplacing<float> ctx (dryBlock);
+        dryDelay.process (ctx);
+    }
+
+    // ── Parallel blend (wet * blend + dry * (1-blend)) ─────────────────────
+    for (int n = 0; n < nS; ++n)
+    {
+        const float wetMix = blendSmoothed.getNextValue();
+        const float dryMix = 1.0f - wetMix;
+        for (int ch = 0; ch < totalOut; ++ch)
+            buffer.getWritePointer (ch)[n] =
+                buffer.getWritePointer (ch)[n] * wetMix +
+                dryBuffer.getReadPointer (ch)[n] * dryMix;
+    }
+
+    // ── Output level (Level knob) ──────────────────────────────────────────
     for (int n = 0; n < nS; ++n)
     {
         const float g = outputGainSmoothed.getNextValue();
@@ -178,12 +224,11 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             buffer.getWritePointer (ch)[n] *= g;
     }
 
-    // Capture output peak AFTER processing.
+    // ── Output peak ────────────────────────────────────────────────────────
     {
         float peak = 0.0f;
         for (int ch = 0; ch < totalOut; ++ch)
             peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, nS));
-
         float cur = outputPeakMax.load (std::memory_order_relaxed);
         while (peak > cur && ! outputPeakMax.compare_exchange_weak (cur, peak, std::memory_order_release, std::memory_order_relaxed)) {}
     }

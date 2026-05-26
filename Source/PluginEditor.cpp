@@ -60,6 +60,10 @@ VroomAudioProcessorEditor::VroomAudioProcessorEditor (VroomAudioProcessor& p)
       inputAttachment     (*processorRef.getAPVTS().getParameter (vroom::ParamID::input),     inputRelay,     nullptr),
       driveAttachment     (*processorRef.getAPVTS().getParameter (vroom::ParamID::drive),     driveRelay,     nullptr),
       characterAttachment (*processorRef.getAPVTS().getParameter (vroom::ParamID::character), characterRelay, nullptr),
+      bodyAttachment      (*processorRef.getAPVTS().getParameter (vroom::ParamID::body),      bodyRelay,      nullptr),
+      toneAttachment      (*processorRef.getAPVTS().getParameter (vroom::ParamID::tone),      toneRelay,      nullptr),
+      sagAttachment       (*processorRef.getAPVTS().getParameter (vroom::ParamID::sag),       sagRelay,       nullptr),
+      blendAttachment     (*processorRef.getAPVTS().getParameter (vroom::ParamID::blend),     blendRelay,     nullptr),
       levelAttachment     (*processorRef.getAPVTS().getParameter (vroom::ParamID::level),     levelRelay,     nullptr),
       webView (juce::WebBrowserComponent::Options{}
                    .withResourceProvider ([this] (const auto& url) { return getResource (url); })
@@ -67,12 +71,16 @@ VroomAudioProcessorEditor::VroomAudioProcessorEditor (VroomAudioProcessor& p)
                    .withOptionsFrom (inputRelay)
                    .withOptionsFrom (driveRelay)
                    .withOptionsFrom (characterRelay)
+                   .withOptionsFrom (bodyRelay)
+                   .withOptionsFrom (toneRelay)
+                   .withOptionsFrom (sagRelay)
+                   .withOptionsFrom (blendRelay)
                    .withOptionsFrom (levelRelay))
 {
     addAndMakeVisible (webView);
     setResizable (true, true);
-    setResizeLimits (520, 360, 1600, 1000);
-    setSize (760, 480);
+    setResizeLimits (640, 420, 1800, 1100);
+    setSize (880, 540);
 
     webView.goToURL (webView.getResourceProviderRoot());
 

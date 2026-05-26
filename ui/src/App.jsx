@@ -42,7 +42,7 @@ export default function App() {
           </span>
         </div>
         <span className="text-[10px] uppercase tracking-widest text-vroom-dim">
-          {isJuceHost ? 'plugin' : 'dev preview'} · phase 2
+          {isJuceHost ? 'plugin' : 'dev preview'} · phase 3
         </span>
       </header>
 
@@ -52,16 +52,20 @@ export default function App() {
       </div>
 
       <main className="flex-1 flex items-center justify-center">
-        <div className="flex flex-row gap-10 p-8">
+        <div className="grid grid-cols-4 gap-x-10 gap-y-6 p-6">
           <Knob paramId="input"     label="Input" />
           <Knob paramId="drive"     label="Drive" />
           <Knob paramId="character" label="Character" />
+          <Knob paramId="body"      label="Body" />
+          <Knob paramId="tone"      label="Tone" />
+          <Knob paramId="sag"       label="Sag" />
+          <Knob paramId="blend"     label="Blend" />
           <Knob paramId="level"     label="Level" />
         </div>
       </main>
 
       <footer className="px-6 py-3 border-t border-vroom-edge text-[11px] text-vroom-dim flex justify-between">
-        <span>Asymmetric soft-clip · oversampled 4×</span>
+        <span>Asym soft-clip · oversampled 4× · parallel dry blend</span>
         <span>v0.1.0</span>
       </footer>
     </div>
