@@ -1,0 +1,15 @@
+build/
+build-*/
+cmake-build-*/
+.cache/
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# UI build artifacts
+ui/node_modules/
+ui/dist/
