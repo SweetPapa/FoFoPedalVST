@@ -1,115 +1,110 @@
 #!/usr/bin/env bash
 #
-# setup-apple-ci-signing.sh — one-time: export your PERSONAL Developer ID
-# certificates from the login keychain and install everything GitHub Actions
-# needs to sign + notarize macOS releases.
+# setup-apple-ci-signing.sh — verify + upload your PERSONAL Developer ID
+# certificates for CI signing. This script never touches other keys: YOU
+# export exactly the two certificates in Keychain Access, and the script
+# inspects the file and refuses to upload if anything else is inside.
 #
-#   ./scripts/setup-apple-ci-signing.sh
-#
-# What it does:
-#   1. Exports your keychain identities (macOS will pop up an "Allow" dialog —
-#      possibly several times; enter your login password / click Always Allow).
-#   2. Extracts ONLY the two personal identities (team 6Y5SZ2K5XY):
-#        Developer ID Application: Forrester Terry
-#        Developer ID Installer:  Forrester Terry
-#      Stanford / institutional certs are never uploaded.
-#   3. Sets the GitHub secrets: APPLE_CERT_APP_P12, APPLE_CERT_INSTALLER_P12,
-#      APPLE_CERT_PASSWORD, APPLE_TEAM_ID — plus APPLE_ID / APPLE_APP_PASSWORD
-#      for notarization (you'll be prompted; create the app-specific password
-#      at https://account.apple.com → Sign-In & Security first).
-#   4. Shreds all temp files.
+# One-time flow:
+#   1. Script opens Keychain Access. In "My Certificates" (login keychain),
+#      cmd-click to select EXACTLY these two entries:
+#         Developer ID Application: Forrester Terry (6Y5SZ2K5XY)
+#         Developer ID Installer:  Forrester Terry (6Y5SZ2K5XY)
+#      File → Export Items… → save as sweetpapa-signing.p12 with a password.
+#   2. Script verifies the file contains ONLY those two identities
+#      (hard abort otherwise — nothing gets uploaded).
+#   3. Sets GitHub secrets: APPLE_CERT_P12, APPLE_CERT_PASSWORD,
+#      APPLE_TEAM_ID, and (optional) APPLE_ID + APPLE_APP_PASSWORD for
+#      notarization. Then deletes the local .p12.
 set -euo pipefail
 
 TEAM_ID="6Y5SZ2K5XY"
-MATCH_NAME="Forrester Terry"
+NAME="Forrester Terry"
 REPO="SweetPapa/FoFoPedalVST"
+ALLOWED_APP="Developer ID Application: $NAME ($TEAM_ID)"
+ALLOWED_INST="Developer ID Installer: $NAME ($TEAM_ID)"
 
 command -v gh >/dev/null || { echo "needs gh CLI (brew install gh)"; exit 1; }
 
-# Prefer Homebrew OpenSSL (handles every PKCS12 variant); fall back to system.
 OPENSSL=openssl
 for c in /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
   [ -x "$c" ] && OPENSSL="$c" && break
 done
 
-WORK="$(mktemp -d)"
-cleanup() { rm -rf "$WORK"; }
-trap cleanup EXIT
+cat <<EOF
+── Step 1: export the two certificates yourself ────────────────────────────
+Keychain Access will open. In the left sidebar pick the "login" keychain,
+then the "My Certificates" tab. Cmd-click to select EXACTLY these two:
 
-EXPORT_PW="$(uuidgen)"
-P12_PW="$(uuidgen)"
+    $ALLOWED_APP
+    $ALLOWED_INST
 
-echo "→ Exporting identities from the login keychain."
-echo "  macOS will ask permission for each private key — click Allow / Always Allow."
-security export -t identities -f pkcs12 -P "$EXPORT_PW" -o "$WORK/all.p12"
+File → Export Items… → format .p12 → save anywhere (e.g. Desktop) with a
+password. Do NOT select anything else — this script will verify and refuse
+to upload if any other identity is in the file.
+────────────────────────────────────────────────────────────────────────────
+EOF
+open -a "Keychain Access" || true
 
-echo "→ Unpacking and selecting personal Developer ID identities…"
-"$OPENSSL" pkcs12 -in "$WORK/all.p12" -passin "pass:$EXPORT_PW" -nodes -out "$WORK/all.pem" 2>/dev/null
+read -r -p "Path to the exported .p12 [~/Desktop/sweetpapa-signing.p12]: " P12_PATH
+P12_PATH="${P12_PATH:-$HOME/Desktop/sweetpapa-signing.p12}"
+P12_PATH="${P12_PATH/#\~/$HOME}"
+[ -f "$P12_PATH" ] || { echo "not found: $P12_PATH"; exit 1; }
 
-python3 - "$WORK" "$TEAM_ID" "$MATCH_NAME" <<'PYEOF'
-import re, sys, os
-work, team, name = sys.argv[1], sys.argv[2], sys.argv[3]
-pem = open(os.path.join(work, 'all.pem')).read()
+read -r -s -p "Password you set on the .p12: " P12_PW; echo ""
 
-# Split into bagged blocks: each "Bag Attributes" header + following PEM body.
-blocks = re.split(r'(?=Bag Attributes)', pem)
-keys, certs = {}, {}
-for b in blocks:
-    m_id = re.search(r'localKeyID:\s*([0-9A-F \.]+)', b)
-    if not m_id:
-        continue
-    kid = m_id.group(1).strip()
-    if '-----BEGIN PRIVATE KEY-----' in b or '-----BEGIN RSA PRIVATE KEY-----' in b:
-        keys[kid] = re.search(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', b, re.S).group(0)
-    elif '-----BEGIN CERTIFICATE-----' in b:
-        fn = re.search(r'friendlyName:\s*(.+)', b)
-        certs.setdefault(kid, []).append((fn.group(1).strip() if fn else '',
-            re.search(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', b, re.S).group(0)))
+echo "── Step 2: verifying the export contains ONLY your personal identities…"
+CERT_NAMES=$("$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys -clcerts 2>/dev/null \
+  | "$OPENSSL" x509 -noout -subject 2>/dev/null; \
+  "$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys 2>/dev/null \
+  | awk '/friendlyName:/ {sub(/^ +friendlyName: /,""); print}')
 
-wanted = {'Application': None, 'Installer': None}
-for kid, certlist in certs.items():
-    for fname, cert in certlist:
-        for kind in wanted:
-            if f'Developer ID {kind}: {name} ({team})' in fname and kid in keys:
-                wanted[kind] = (keys[kid], cert, fname)
+if [ -z "$CERT_NAMES" ]; then
+  echo "could not read the .p12 (wrong password?)"; exit 1
+fi
 
-missing = [k for k, v in wanted.items() if v is None]
-if missing:
-    print(f"ERROR: could not find personal Developer ID {missing} identity(ies) "
-          f"for {name} ({team}) with private keys in the export.", file=sys.stderr)
-    sys.exit(1)
+echo "$CERT_NAMES" | sed 's/^/    /'
 
-for kind, (key, cert, fname) in wanted.items():
-    base = os.path.join(work, kind.lower())
-    open(base + '.key', 'w').write(key)
-    open(base + '.crt', 'w').write(cert)
-    print(f"  ✓ {fname}")
-PYEOF
+BAD=$(echo "$CERT_NAMES" | grep -v "Developer ID Application: $NAME" \
+                          | grep -v "Developer ID Installer: $NAME" \
+                          | grep -v "^subject=" | grep -v "^$" || true)
+# subject lines describe the same certs; judge on friendlyName lines only
+FRIENDLY=$(echo "$CERT_NAMES" | grep -v "^subject=" | grep -v "^$" || true)
+EXTRA=$(echo "$FRIENDLY" | grep -vF "$ALLOWED_APP" | grep -vF "$ALLOWED_INST" || true)
 
-for kind in application installer; do
-  "$OPENSSL" pkcs12 -export \
-    -inkey "$WORK/$kind.key" -in "$WORK/$kind.crt" \
-    -passout "pass:$P12_PW" -out "$WORK/$kind.p12"
-done
+if [ -n "$EXTRA" ]; then
+  echo ""
+  echo "✗ REFUSING TO UPLOAD — the export contains identities other than your"
+  echo "  personal Developer ID pair:"
+  echo "$EXTRA" | sed 's/^/      /'
+  echo "  Re-export with ONLY the two '$NAME ($TEAM_ID)' entries selected."
+  exit 1
+fi
+if ! echo "$FRIENDLY" | grep -qF "$ALLOWED_APP" || ! echo "$FRIENDLY" | grep -qF "$ALLOWED_INST"; then
+  echo ""
+  echo "✗ The export is missing one of the two required identities"
+  echo "  (need both Application and Installer). Re-export with both selected."
+  exit 1
+fi
+echo "  ✓ exactly the two personal Developer ID identities — safe to upload"
 
-echo "→ Setting GitHub secrets on $REPO…"
-base64 -i "$WORK/application.p12" | gh secret set APPLE_CERT_APP_P12       -R "$REPO"
-base64 -i "$WORK/installer.p12"   | gh secret set APPLE_CERT_INSTALLER_P12 -R "$REPO"
-printf '%s' "$P12_PW"             | gh secret set APPLE_CERT_PASSWORD      -R "$REPO"
-printf '%s' "$TEAM_ID"            | gh secret set APPLE_TEAM_ID            -R "$REPO"
+echo "── Step 3: setting GitHub secrets on $REPO…"
+base64 -i "$P12_PATH"  | gh secret set APPLE_CERT_P12      -R "$REPO"
+printf '%s' "$P12_PW"  | gh secret set APPLE_CERT_PASSWORD -R "$REPO"
+printf '%s' "$TEAM_ID" | gh secret set APPLE_TEAM_ID       -R "$REPO"
 
 echo ""
-read -r -p "Apple ID email (for notarization): " APPLE_ID_IN
-read -r -s -p "App-specific password (from account.apple.com, format xxxx-xxxx-xxxx-xxxx): " APP_PW_IN
-echo ""
-if [ -n "$APPLE_ID_IN" ] && [ -n "$APP_PW_IN" ]; then
+read -r -p "Apple ID email (for notarization, blank to skip): " APPLE_ID_IN
+if [ -n "$APPLE_ID_IN" ]; then
+  read -r -s -p "App-specific password (account.apple.com → App-Specific Passwords): " APP_PW_IN; echo ""
   printf '%s' "$APPLE_ID_IN" | gh secret set APPLE_ID           -R "$REPO"
   printf '%s' "$APP_PW_IN"   | gh secret set APPLE_APP_PASSWORD -R "$REPO"
   echo "  ✓ notarization secrets set"
 else
-  echo "  (skipped notarization secrets — re-run any time to add them)"
+  echo "  (skipped notarization secrets — re-run any time)"
 fi
 
+rm -f "$P12_PATH"
 echo ""
-echo "Done. CI can now sign + notarize macOS releases. Secrets on the repo:"
+echo "Done — local .p12 deleted. Secrets now on the repo:"
 gh secret list -R "$REPO"

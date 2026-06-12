@@ -46,14 +46,14 @@ day one.
 ```bash
 ./scripts/setup-apple-ci-signing.sh
 ```
-It exports ONLY your personal Developer ID identities (team `6Y5SZ2K5XY` —
-Stanford certs are never touched), builds the .p12s, and sets all the
-secrets (`APPLE_CERT_APP_P12`, `APPLE_CERT_INSTALLER_P12`,
-`APPLE_CERT_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_ID`, `APPLE_APP_PASSWORD`).
-Before running, create an app-specific password at
-https://account.apple.com → Sign-In & Security → App-Specific Passwords
-so you can paste it when prompted. Expect several macOS keychain "Allow"
-dialogs during the export.
+You export the two personal Developer ID certificates yourself in Keychain
+Access (the script opens it and tells you exactly which two to select — no
+other keys are ever exported). The script then VERIFIES the .p12 contains
+only those two identities (hard abort otherwise), uploads the secrets
+(`APPLE_CERT_P12`, `APPLE_CERT_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_ID`,
+`APPLE_APP_PASSWORD`), and deletes the local file. Before running, create
+an app-specific password at https://account.apple.com → Sign-In & Security
+→ App-Specific Passwords so you can paste it when prompted.
 
 ## Local fallbacks
 
