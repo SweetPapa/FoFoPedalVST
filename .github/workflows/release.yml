@@ -41,7 +41,9 @@ jobs:
 
       - name: Build plugins (Release)
         run: |
-          cmake -B build
+          # single-config generator on the runner — set the build type or
+          # artefacts land outside the Release/ folder the packager expects
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
           for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
             cmake --build build --target "${t}_VST3" --config Release
             cmake --build build --target "${t}_AU"   --config Release

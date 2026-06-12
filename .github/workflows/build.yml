@@ -35,8 +35,26 @@ jobs:
             (cd "$d" && npm ci && npm run build)
           done
 
-      - name: Configure
-        run: cmake -B build ${{ matrix.name == 'windows' && '-G "Visual Studio 17 2022" -A x64' || '' }}
+      - name: Install WebView2 SDK (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          $v = "1.0.1901.177"
+          $root = "$env:RUNNER_TEMP\webview2"
+          $pkg = "$root\Microsoft.Web.WebView2.$v"
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+          Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$v" -OutFile "$root\wv2.zip"
+          Expand-Archive "$root\wv2.zip" -DestinationPath $pkg -Force
+          echo "WEBVIEW2_DIR=$root" >> $env:GITHUB_ENV
+
+      - name: Configure (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:WEBVIEW2_DIR"
+
+      - name: Configure (macOS)
+        if: matrix.name == 'macos'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build (Release)
         shell: bash

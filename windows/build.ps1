@@ -32,7 +32,21 @@ foreach ($d in $uiDirs) {
 }
 
 Write-Host "== 2/4 CMake build (Release x64) ==" -ForegroundColor Cyan
-cmake -B $BuildDir -G "Visual Studio 17 2022" -A x64
+# WebView2 SDK — required by the plugin UIs. JUCE looks for the NuGet package
+# via JUCE_WEBVIEW2_PACKAGE_LOCATION; a .nupkg is just a zip, so fetch it
+# directly (no nuget.exe needed — works the same in CI and on a fresh machine).
+$Wv2Version = "1.0.1901.177"
+$Wv2Root = Join-Path $RepoRoot "$BuildDir\webview2"
+$Wv2Pkg = Join-Path $Wv2Root "Microsoft.Web.WebView2.$Wv2Version"
+if (-not (Test-Path "$Wv2Pkg\build\native\include\WebView2.h")) {
+    New-Item -ItemType Directory -Force -Path $Wv2Pkg | Out-Null
+    $zip = Join-Path $Wv2Root "webview2.zip"
+    Invoke-WebRequest "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$Wv2Version" -OutFile $zip
+    Expand-Archive $zip -DestinationPath $Wv2Pkg -Force
+    Remove-Item $zip
+}
+
+cmake -B $BuildDir -G "Visual Studio 17 2022" -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$Wv2Root"
 foreach ($p in $Plugins) {
     cmake --build $BuildDir --target "${p}_VST3" --config Release
     if ($LASTEXITCODE -ne 0) { throw "build failed: $p" }
