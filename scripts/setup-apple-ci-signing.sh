@@ -14,8 +14,9 @@
 #   2. Script verifies the file contains ONLY those two identities
 #      (hard abort otherwise — nothing gets uploaded).
 #   3. Sets GitHub secrets: APPLE_CERT_P12, APPLE_CERT_PASSWORD,
-#      APPLE_TEAM_ID, and (optional) APPLE_ID + APPLE_APP_PASSWORD for
-#      notarization. Then deletes the local .p12.
+#      APPLE_TEAM_ID — and APPLE_ID + APPLE_APP_PASSWORD for notarization,
+#      read from the 'spt-notary' keychain item (account = Apple ID email,
+#      password = app-specific password). Then deletes the local .p12.
 set -euo pipefail
 
 TEAM_ID="6Y5SZ2K5XY"
@@ -65,9 +66,6 @@ fi
 
 echo "$CERT_NAMES" | sed 's/^/    /'
 
-BAD=$(echo "$CERT_NAMES" | grep -v "Developer ID Application: $NAME" \
-                          | grep -v "Developer ID Installer: $NAME" \
-                          | grep -v "^subject=" | grep -v "^$" || true)
 # subject lines describe the same certs; judge on friendlyName lines only
 FRIENDLY=$(echo "$CERT_NAMES" | grep -v "^subject=" | grep -v "^$" || true)
 EXTRA=$(echo "$FRIENDLY" | grep -vF "$ALLOWED_APP" | grep -vF "$ALLOWED_INST" || true)
@@ -94,12 +92,23 @@ printf '%s' "$P12_PW"  | gh secret set APPLE_CERT_PASSWORD -R "$REPO"
 printf '%s' "$TEAM_ID" | gh secret set APPLE_TEAM_ID       -R "$REPO"
 
 echo ""
-read -r -p "Apple ID email (for notarization, blank to skip): " APPLE_ID_IN
-if [ -n "$APPLE_ID_IN" ]; then
-  read -r -s -p "App-specific password (account.apple.com → App-Specific Passwords): " APP_PW_IN; echo ""
+echo "── Step 4: notarization credentials from the 'spt-notary' keychain item…"
+# The keychain item stores the app-specific password as the secret and the
+# Apple ID email in its account field. (macOS may show one Allow prompt.)
+APPLE_ID_IN=$(security find-generic-password -s spt-notary 2>/dev/null \
+  | awk -F'"' '/"acct"/ {print $4}')
+APP_PW_IN=$(security find-generic-password -s spt-notary -w 2>/dev/null || true)
+
+if [ -z "$APPLE_ID_IN" ] || [ -z "$APP_PW_IN" ]; then
+  echo "  ('spt-notary' item not found/readable — falling back to prompts)"
+  read -r -p "Apple ID email (blank to skip notarization): " APPLE_ID_IN
+  [ -n "$APPLE_ID_IN" ] && { read -r -s -p "App-specific password: " APP_PW_IN; echo ""; }
+fi
+
+if [ -n "$APPLE_ID_IN" ] && [ -n "$APP_PW_IN" ]; then
   printf '%s' "$APPLE_ID_IN" | gh secret set APPLE_ID           -R "$REPO"
   printf '%s' "$APP_PW_IN"   | gh secret set APPLE_APP_PASSWORD -R "$REPO"
-  echo "  ✓ notarization secrets set"
+  echo "  ✓ notarization secrets set (Apple ID: $APPLE_ID_IN)"
 else
   echo "  (skipped notarization secrets — re-run any time)"
 fi
