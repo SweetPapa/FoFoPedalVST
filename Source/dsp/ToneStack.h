@@ -20,6 +20,11 @@ public:
     void setPreHPFHz   (float hz);
     void setBodyCenterHz (float hz);
 
+    // Enables the Acoustic-mode extras (spec §5): a wide ~3 kHz cut to tame
+    // piezo "quack" before the saturator, and a gentle high shelf above ~8 kHz
+    // after the voicing filters to restore air.
+    void setAcousticVoicing (bool enabled);
+
     // UI knob values, 0..1 normalised.
     void setBody01 (float v); // -6 .. +12 dB peaking gain at body center
     void setTone01 (float v); // 1.5 kHz .. 12 kHz log low-pass cutoff
@@ -33,6 +38,8 @@ private:
     void updateDCBlocker();
     void updateBody();
     void updateTone();
+    void updatePiezoTamer();
+    void updateAirShelf();
 
     juce::dsp::ProcessSpec spec {};
 
@@ -42,10 +49,15 @@ private:
     float bodyUI01 { 0.55f };
     float toneUI01 { 0.50f };
 
+    bool acousticVoicing { false };
+
     std::vector<juce::dsp::IIR::Filter<float>> preHPF;
     std::vector<juce::dsp::IIR::Filter<float>> dcBlocker;
     std::vector<juce::dsp::IIR::Filter<float>> bodyEQ;
     std::vector<juce::dsp::IIR::Filter<float>> toneLPF;
+    std::vector<juce::dsp::IIR::Filter<float>> toneTilt;  // shelf tied to Tone — keeps the knob alive across its travel
+    std::vector<juce::dsp::IIR::Filter<float>> piezoTamer;
+    std::vector<juce::dsp::IIR::Filter<float>> airShelf;
 };
 
 } // namespace vroom

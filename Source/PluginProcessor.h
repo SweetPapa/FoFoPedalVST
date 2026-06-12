@@ -6,6 +6,10 @@
 #include "dsp/Saturator.h"
 #include "dsp/ToneStack.h"
 #include "dsp/Sag.h"
+#include "dsp/CabSim.h"
+#include "dsp/BandSplit.h"
+#include "modes/SourceMode.h"
+#include "presets/PresetManager.h"
 
 namespace vroom
 {
@@ -24,14 +28,17 @@ namespace vroom
         inline constexpr const char* cabEnable    = "cabEnable";
         inline constexpr const char* cabIR        = "cabIR";
         inline constexpr const char* oversampling = "oversampling";
+        inline constexpr const char* clipShape    = "clipShape";
     }
 }
 
-class VroomAudioProcessor : public juce::AudioProcessor
+class VroomAudioProcessor : public juce::AudioProcessor,
+                            private juce::AudioProcessorValueTreeState::Listener,
+                            private juce::AsyncUpdater
 {
 public:
     VroomAudioProcessor();
-    ~VroomAudioProcessor() override = default;
+    ~VroomAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -64,7 +71,18 @@ public:
     float fetchInputPeakAndReset()  noexcept { return inputPeakMax .exchange (0.0f); }
     float fetchOutputPeakAndReset() noexcept { return outputPeakMax.exchange (0.0f); }
 
+    // Called from the editor (message thread) when the user picks a custom IR.
+    // Returns the displayable name, or empty string on failure.
+    juce::String loadCustomIR (const juce::File& irFile);
+
+    juce::String getCurrentIRDisplayName() const;
+
+    vroom::PresetManager& getPresetManager() noexcept { return presetManager; }
+
 private:
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void handleAsyncUpdate() override;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     juce::AudioProcessorValueTreeState apvts;
@@ -77,20 +95,37 @@ private:
     std::atomic<float>* sagParam         { nullptr };
     std::atomic<float>* blendParam       { nullptr };
     std::atomic<float>* levelDbParam     { nullptr };
+    std::atomic<float>* cabEnableParam   { nullptr };
+    std::atomic<float>* cabIRParam       { nullptr };
+    std::atomic<float>* sourceModeParam  { nullptr };
+    std::atomic<float>* clipShapeParam   { nullptr };
 
     vroom::ToneStack tone;
     vroom::Saturator saturator;
     vroom::Sag       sag;
+    vroom::CabSim    cab;
+    vroom::BandSplit bandSplit;
+    bool             bandSplitActive { false };
+    int              currentSourceMode { vroom::Mode_Electric };
+    float            sagModeScale { 1.0f }; // mode-driven scale shared by Sag block + saturator touch response
+
+    // Splits "mode change" into two parts so preset loads can apply only the
+    // hidden DSP voicing without overwriting the preset's cab choice with the
+    // mode's default cab (which is what user-driven mode switches still do).
+    void applyModeVoicing      (int modeIdx);
+    void applyModeDefaultCab   (int modeIdx);
+    void applySourceModeConfig (int modeIdx); // voicing + default cab
 
     juce::SmoothedValue<float> inputGainSmoothed  { 1.0f };
     juce::SmoothedValue<float> outputGainSmoothed { 1.0f };
     juce::SmoothedValue<float> blendSmoothed      { 0.7f };
 
-    // Dry tap that runs parallel to the wet chain (Pre-HPF → drive → DC → Sag
-    // → Body → Tone). Delayed to match the wet path's oversampling latency so
-    // the parallel sum stays phase-coherent and we don't get comb filtering.
+    vroom::PresetManager presetManager { apvts };
+
     juce::AudioBuffer<float> dryBuffer;
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> dryDelay { 64 };
+    juce::AudioBuffer<float> lowsBuffer;  // bass-mode clean low band
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> dryDelay  { 64 };
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> lowsDelay { 64 };
 
     std::atomic<float> inputPeakMax  { 0.0f };
     std::atomic<float> outputPeakMax { 0.0f };

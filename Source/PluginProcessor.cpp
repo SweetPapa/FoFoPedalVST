@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "spt/Shapers.h"
 
 using APVTS = juce::AudioProcessorValueTreeState;
 using namespace vroom;
@@ -50,9 +51,12 @@ APVTS::ParameterLayout VroomAudioProcessor::createParameterLayout()
         juce::ParameterID { ParamID::sag, kParamVersionHint }, "Sag",
         juce::NormalisableRange<float> (0.0f, 100.0f, 0.01f), 35.0f, percentAttributes()));
 
+    // Blend defaults to fully wet — parallel dirt is the *trick*, not the
+    // default. (A 70% default layered latency-compensated dry under every
+    // sound, which read as "the pedal isn't doing much.")
     layout.add (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { ParamID::blend, kParamVersionHint }, "Blend",
-        juce::NormalisableRange<float> (0.0f, 100.0f, 0.01f), 70.0f, percentAttributes()));
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.01f), 100.0f, percentAttributes()));
 
     layout.add (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { ParamID::level, kParamVersionHint }, "Level",
@@ -77,6 +81,10 @@ APVTS::ParameterLayout VroomAudioProcessor::createParameterLayout()
         juce::ParameterID { ParamID::oversampling, kParamVersionHint }, "Oversampling",
         juce::StringArray { "2x", "4x", "8x" }, 1));
 
+    layout.add (std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { ParamID::clipShape, kParamVersionHint }, "Voice",
+        juce::StringArray { "Smooth", "Crunch", "Fuzz", "Octave" }, 0));
+
     return layout;
 }
 
@@ -94,6 +102,29 @@ VroomAudioProcessor::VroomAudioProcessor()
     sagParam       = apvts.getRawParameterValue (ParamID::sag);
     blendParam     = apvts.getRawParameterValue (ParamID::blend);
     levelDbParam   = apvts.getRawParameterValue (ParamID::level);
+    cabEnableParam  = apvts.getRawParameterValue (ParamID::cabEnable);
+    cabIRParam      = apvts.getRawParameterValue (ParamID::cabIR);
+    sourceModeParam = apvts.getRawParameterValue (ParamID::sourceMode);
+    clipShapeParam  = apvts.getRawParameterValue (ParamID::clipShape);
+
+    // Listen for parameter changes that have to be applied on the message
+    // thread (cab IR load allocates; source mode reconfigures DSP + APVTS).
+    apvts.addParameterListener (ParamID::cabEnable,  this);
+    apvts.addParameterListener (ParamID::cabIR,      this);
+    apvts.addParameterListener (ParamID::sourceMode, this);
+
+    // Load the "Vroom" signature preset on first construction. If the host
+    // later restores state via setStateInformation, those values overwrite
+    // these — that's the right precedence (session > factory defaults).
+    presetManager.loadByName ("Vroom", true);
+}
+
+VroomAudioProcessor::~VroomAudioProcessor()
+{
+    apvts.removeParameterListener (ParamID::cabEnable,  this);
+    apvts.removeParameterListener (ParamID::cabIR,      this);
+    apvts.removeParameterListener (ParamID::sourceMode, this);
+    cancelPendingUpdate();
 }
 
 void VroomAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -104,20 +135,28 @@ void VroomAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     tone.prepare (spec);
     saturator.prepare (spec);
     sag.prepare (spec);
+    cab.prepare (spec);
+    bandSplit.prepare (spec);
 
-    // Electric Guitar default voicing (spec §5). Mode switching arrives in Phase 5.
-    tone.setPreHPFHz (90.0f);
-    tone.setBodyCenterHz (300.0f);
+    // Apply the current Source Mode's DSP voicing. Crucially we DON'T call
+    // applyModeDefaultCab here — that would overwrite cabIR/cabEnable in
+    // APVTS, which fails AU validation ("Parameter did not retain set value
+    // when Initialized") because auval sets a value, calls prepareToPlay,
+    // then expects to read it back unchanged.
+    applyModeVoicing ((int) sourceModeParam->load());
 
-    // Dry buffer + latency-compensated delay line for the parallel blend.
-    dryBuffer.setSize ((int) numCh, samplesPerBlock, false, true, true);
+    // Honor whatever cab params the host (or restored session) currently has.
+    cab.setEnabled (cabEnableParam->load() > 0.5f);
+    cab.selectSlot ((int) cabIRParam->load());
 
-    // Max needs to cover the worst-case oversampling latency. Oversampler at
-    // 8× gives a handful of base-rate samples; 64 is comfortably above the
-    // ceiling for any reasonable filter design.
-    dryDelay.setMaximumDelayInSamples (64);
-    dryDelay.prepare (spec);
-    dryDelay.setDelay ((float) saturator.getLatencySamples());
+    dryBuffer .setSize ((int) numCh, samplesPerBlock, false, true, true);
+    lowsBuffer.setSize ((int) numCh, samplesPerBlock, false, true, true);
+    dryDelay .setMaximumDelayInSamples (64);
+    lowsDelay.setMaximumDelayInSamples (64);
+    dryDelay .prepare (spec);
+    lowsDelay.prepare (spec);
+    dryDelay .setDelay ((float) saturator.getLatencySamples());
+    lowsDelay.setDelay ((float) saturator.getLatencySamples());
 
     inputGainSmoothed .reset (sampleRate, 0.02);
     outputGainSmoothed.reset (sampleRate, 0.02);
@@ -126,7 +165,7 @@ void VroomAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (levelDbParam ? levelDbParam->load() : 0.0f));
     blendSmoothed     .setCurrentAndTargetValue ((blendParam ? blendParam->load() : 70.0f) * 0.01f);
 
-    setLatencySamples (saturator.getLatencySamples());
+    setLatencySamples (saturator.getLatencySamples() + cab.getLatencySamples());
 }
 
 void VroomAudioProcessor::releaseResources()
@@ -134,7 +173,10 @@ void VroomAudioProcessor::releaseResources()
     tone.reset();
     saturator.reset();
     sag.reset();
+    cab.reset();
+    bandSplit.reset();
     dryDelay.reset();
+    lowsDelay.reset();
 }
 
 bool VroomAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -174,6 +216,8 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
     saturator.setDrive01     (driveParam    ->load() * 0.01f);
     saturator.setCharacter01 (characterParam->load() * 0.01f);
+    saturator.setClipShape   ((int) (clipShapeParam ? clipShapeParam->load() : 0.0f));
+    saturator.setSagDepth01  (sagParam->load() * 0.01f * sagModeScale);
     tone.setBody01 (bodyParam->load() * 0.01f);
     tone.setTone01 (toneParam->load() * 0.01f);
     sag .setSag01  (sagParam ->load() * 0.01f);
@@ -190,19 +234,42 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     for (int ch = 0; ch < totalOut; ++ch)
         dryBuffer.copyFrom (ch, 0, buffer, ch, 0, nS);
 
+    // ── Bass mode: pre-split, drive only the high band ─────────────────────
+    // bandSplit.split() leaves the high band in `buffer` and writes the clean
+    // low band to `lowsBuffer`. The lows skip the saturator entirely so they
+    // stay punchy (spec §5).
+    if (bandSplitActive)
+        bandSplit.split (buffer, lowsBuffer);
+
     // ── Wet chain (spec §3) ────────────────────────────────────────────────
-    tone.processPre (buffer);          // Pre-HPF (tighten lows)
+    tone.processPre (buffer);          // Pre-HPF (tighten lows) + Acoustic piezo tamer
     saturator.process (buffer);        // Oversampled asymmetric cascaded clip
     tone.processDCBlock (buffer);      // Kill the bias-induced DC offset
     sag.process (buffer);              // Tube-amp supply sag / bloom
-    tone.processBodyAndTone (buffer);  // Body EQ + Tone LPF
+    tone.processBodyAndTone (buffer);  // Body EQ + Tone LPF + Acoustic air shelf
 
-    // ── Dry path latency compensation ──────────────────────────────────────
+    // ── Latency compensation for dry (+ bass-mode lows) ────────────────────
     {
         juce::dsp::AudioBlock<float> dryBlock (dryBuffer.getArrayOfWritePointers(),
                                                (size_t) totalOut, 0, (size_t) nS);
         juce::dsp::ProcessContextReplacing<float> ctx (dryBlock);
         dryDelay.process (ctx);
+    }
+
+    if (bandSplitActive)
+    {
+        // Delay the clean low band by the same wet-chain latency so it sums
+        // back in phase with the driven highs — otherwise the LR4 crossover
+        // smears.
+        juce::dsp::AudioBlock<float> lowsBlock (lowsBuffer.getArrayOfWritePointers(),
+                                                (size_t) totalOut, 0, (size_t) nS);
+        juce::dsp::ProcessContextReplacing<float> ctx (lowsBlock);
+        lowsDelay.process (ctx);
+
+        // Re-add the clean lows to the driven highs — this is the "wet" output
+        // before the Blend mix.
+        for (int ch = 0; ch < totalOut; ++ch)
+            buffer.addFrom (ch, 0, lowsBuffer, ch, 0, nS);
     }
 
     // ── Parallel blend (wet * blend + dry * (1-blend)) ─────────────────────
@@ -216,12 +283,20 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                 dryBuffer.getReadPointer (ch)[n] * dryMix;
     }
 
-    // ── Output level (Level knob) ──────────────────────────────────────────
+    // ── Cabinet IR convolution (applied equally to wet+dry sum) ────────────
+    cab.process (buffer);
+
+    // ── Output level (Level knob) + cubic safety clip ──────────────────────
+    // The soft clip is transparent below ~−6 dBFS and rounds off anything
+    // hotter, so transients never crack the host meter.
     for (int n = 0; n < nS; ++n)
     {
         const float g = outputGainSmoothed.getNextValue();
         for (int ch = 0; ch < totalOut; ++ch)
-            buffer.getWritePointer (ch)[n] *= g;
+        {
+            auto* d = buffer.getWritePointer (ch);
+            d[n] = spt::softClipCubic (d[n] * g);
+        }
     }
 
     // ── Output peak ────────────────────────────────────────────────────────
@@ -232,6 +307,103 @@ void VroomAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         float cur = outputPeakMax.load (std::memory_order_relaxed);
         while (peak > cur && ! outputPeakMax.compare_exchange_weak (cur, peak, std::memory_order_release, std::memory_order_relaxed)) {}
     }
+}
+
+void VroomAudioProcessor::parameterChanged (const juce::String& parameterID, float)
+{
+    // Bounce to message thread — convolution loads allocate, and applying a
+    // mode change touches multiple APVTS parameters which we shouldn't do
+    // from the audio thread.
+    if (parameterID == ParamID::cabEnable
+        || parameterID == ParamID::cabIR
+        || parameterID == ParamID::sourceMode)
+        triggerAsyncUpdate();
+}
+
+void VroomAudioProcessor::handleAsyncUpdate()
+{
+    const bool wasPresetLoad = presetManager.isLoadInProgress();
+
+    if (sourceModeParam)
+    {
+        const int mode = (int) sourceModeParam->load();
+        if (mode != currentSourceMode)
+        {
+            // During a preset load we only apply the hidden voicing — the
+            // preset already specifies its own cabEnable/cabIR and we don't
+            // want the mode's default cab to clobber those.
+            if (wasPresetLoad)
+                applyModeVoicing (mode);
+            else
+                applySourceModeConfig (mode);
+        }
+    }
+
+    if (cabEnableParam) cab.setEnabled (cabEnableParam->load() > 0.5f);
+    if (cabIRParam)
+    {
+        const int slot = (int) cabIRParam->load();
+        if (slot != cab.getCurrentSlot()) cab.selectSlot (slot);
+    }
+
+    presetManager.clearLoadInProgress();
+}
+
+void VroomAudioProcessor::applyModeVoicing (int modeIdx)
+{
+    using namespace vroom;
+    modeIdx = juce::jlimit (0, (int) NumSourceModes - 1, modeIdx);
+    const auto& cfg = getModeConfig ((SourceMode) modeIdx);
+
+    tone.setPreHPFHz       (cfg.preHPFHz);
+    tone.setBodyCenterHz   (cfg.bodyCenterHz);
+    tone.setAcousticVoicing (cfg.acousticVoicing);
+    saturator.setDriveCeilingScale (cfg.driveCeilingScale);
+    sag.setResponseScale   (cfg.sagResponseScale);
+    sagModeScale = cfg.sagResponseScale;
+
+    bandSplitActive = cfg.bandSplitDrive;
+    if (cfg.bandSplitDrive)
+        bandSplit.setCrossoverHz (cfg.bandSplitHz);
+    bandSplit.reset();
+    lowsDelay.reset();
+
+    currentSourceMode = modeIdx;
+}
+
+void VroomAudioProcessor::applyModeDefaultCab (int modeIdx)
+{
+    using namespace vroom;
+    modeIdx = juce::jlimit (0, (int) NumSourceModes - 1, modeIdx);
+    const auto& cfg = getModeConfig ((SourceMode) modeIdx);
+
+    if (auto* p = apvts.getParameter (ParamID::cabEnable))
+        p->setValueNotifyingHost (cfg.defaultCabEnabled ? 1.0f : 0.0f);
+    if (auto* p = apvts.getParameter (ParamID::cabIR))
+        p->setValueNotifyingHost (p->convertTo0to1 ((float) cfg.defaultCabSlot));
+}
+
+void VroomAudioProcessor::applySourceModeConfig (int modeIdx)
+{
+    applyModeVoicing    (modeIdx);
+    applyModeDefaultCab (modeIdx);
+}
+
+juce::String VroomAudioProcessor::loadCustomIR (const juce::File& irFile)
+{
+    if (! cab.loadCustomIRFile (irFile))
+        return {};
+    return cab.getCustomName();
+}
+
+juce::String VroomAudioProcessor::getCurrentIRDisplayName() const
+{
+    if (cab.hasCustomLoaded())
+        return cab.getCustomName();
+
+    static const char* names[] = { "1x12 Warm", "4x12 Modern", "Bass 1x15", "Full-Range / DI" };
+    const int s = juce::jlimit (0, 3, cab.getCurrentSlot());
+    return names[s];
 }
 
 juce::AudioProcessorEditor* VroomAudioProcessor::createEditor()

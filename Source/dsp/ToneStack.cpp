@@ -5,14 +5,16 @@ namespace vroom
 
 namespace
 {
-    // Spec §4: Body maps 0..100 → −6 .. +12 dB peaking gain.
-    constexpr float kBodyDbMin = -6.0f;
-    constexpr float kBodyDbMax = 12.0f;
+    // Body maps 0..100 → −8 .. +14 dB peaking gain.
+    constexpr float kBodyDbMin = -8.0f;
+    constexpr float kBodyDbMax = 14.0f;
     constexpr float kBodyQ     = 0.7f; // wide bell — body, not surgical
 
-    // Spec §4: Tone maps 0..100 → 1.5 kHz .. 12 kHz, log.
-    constexpr float kToneHzMin = 1500.0f;
-    constexpr float kToneHzMax = 12000.0f;
+    // Tone maps 0..100 → 1.2 kHz .. 16 kHz, log. A ±3 dB shelf at 900 Hz
+    // moves with it so the top half of the knob still audibly changes the
+    // sound after the LPF has left the audible band.
+    constexpr float kToneHzMin = 1200.0f;
+    constexpr float kToneHzMax = 16000.0f;
 }
 
 void ToneStack::prepare (const juce::dsp::ProcessSpec& s)
@@ -21,23 +23,42 @@ void ToneStack::prepare (const juce::dsp::ProcessSpec& s)
 
     // juce::dsp::IIR::Filter has no copy assignment, so we default-construct
     // each channel slot rather than using assign(n, value).
-    preHPF   .clear(); preHPF   .resize (spec.numChannels);
-    dcBlocker.clear(); dcBlocker.resize (spec.numChannels);
-    bodyEQ   .clear(); bodyEQ   .resize (spec.numChannels);
-    toneLPF  .clear(); toneLPF  .resize (spec.numChannels);
+    preHPF    .clear(); preHPF    .resize (spec.numChannels);
+    dcBlocker .clear(); dcBlocker .resize (spec.numChannels);
+    bodyEQ    .clear(); bodyEQ    .resize (spec.numChannels);
+    toneLPF   .clear(); toneLPF   .resize (spec.numChannels);
+    toneTilt  .clear(); toneTilt  .resize (spec.numChannels);
+    piezoTamer.clear(); piezoTamer.resize (spec.numChannels);
+    airShelf  .clear(); airShelf  .resize (spec.numChannels);
 
     updatePreHPF();
     updateDCBlocker();
     updateBody();
     updateTone();
+    updatePiezoTamer();
+    updateAirShelf();
 }
 
 void ToneStack::reset()
 {
-    for (auto& f : preHPF)    f.reset();
-    for (auto& f : dcBlocker) f.reset();
-    for (auto& f : bodyEQ)    f.reset();
-    for (auto& f : toneLPF)   f.reset();
+    for (auto& f : preHPF)     f.reset();
+    for (auto& f : dcBlocker)  f.reset();
+    for (auto& f : bodyEQ)     f.reset();
+    for (auto& f : toneLPF)    f.reset();
+    for (auto& f : toneTilt)   f.reset();
+    for (auto& f : piezoTamer) f.reset();
+    for (auto& f : airShelf)   f.reset();
+}
+
+void ToneStack::setAcousticVoicing (bool enabled)
+{
+    if (enabled == acousticVoicing) return;
+    acousticVoicing = enabled;
+    // No coefficient rebuild needed — voicing filters keep their coefs and
+    // we just stop running them. Reset their state so cached samples don't
+    // pop when re-enabled later.
+    for (auto& f : piezoTamer) f.reset();
+    for (auto& f : airShelf)   f.reset();
 }
 
 void ToneStack::setPreHPFHz (float hz)
@@ -100,6 +121,30 @@ void ToneStack::updateTone()
     const float t = std::exp (std::log (kToneHzMin) + (std::log (kToneHzMax) - std::log (kToneHzMin)) * toneUI01);
     const auto coefs = juce::dsp::IIR::Coefficients<float>::makeLowPass (spec.sampleRate, t);
     for (auto& f : toneLPF) f.coefficients = coefs;
+
+    // Shelf rides with the knob: dark settings also pull the upper mids down
+    // a touch, bright settings push them up — so every position of the knob
+    // does something audible, not just the bottom third.
+    const float shelfDb = juce::jmap (toneUI01, 0.0f, 1.0f, -3.0f, 3.0f);
+    const auto tiltCoefs = juce::dsp::IIR::Coefficients<float>::makeHighShelf (
+        spec.sampleRate, 900.0f, 0.6f, juce::Decibels::decibelsToGain (shelfDb));
+    for (auto& f : toneTilt) f.coefficients = tiltCoefs;
+}
+
+void ToneStack::updatePiezoTamer()
+{
+    // Spec §5: wide -3 dB dip around 3 kHz to soften piezo "quack".
+    const auto coefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter (
+        spec.sampleRate, 3000.0f, 0.7f, juce::Decibels::decibelsToGain (-3.0f));
+    for (auto& f : piezoTamer) f.coefficients = coefs;
+}
+
+void ToneStack::updateAirShelf()
+{
+    // Spec §5: gentle high shelf (+2.5 dB) above ~8 kHz to restore sparkle.
+    const auto coefs = juce::dsp::IIR::Coefficients<float>::makeHighShelf (
+        spec.sampleRate, 8000.0f, 0.707f, juce::Decibels::decibelsToGain (2.5f));
+    for (auto& f : airShelf) f.coefficients = coefs;
 }
 
 namespace
@@ -118,12 +163,23 @@ namespace
     }
 }
 
-void ToneStack::processPre         (juce::AudioBuffer<float>& b) noexcept { processFilters (preHPF,    b); }
-void ToneStack::processDCBlock     (juce::AudioBuffer<float>& b) noexcept { processFilters (dcBlocker, b); }
+void ToneStack::processPre (juce::AudioBuffer<float>& b) noexcept
+{
+    processFilters (preHPF, b);
+    if (acousticVoicing) processFilters (piezoTamer, b);
+}
+
+void ToneStack::processDCBlock (juce::AudioBuffer<float>& b) noexcept
+{
+    processFilters (dcBlocker, b);
+}
+
 void ToneStack::processBodyAndTone (juce::AudioBuffer<float>& b) noexcept
 {
     processFilters (bodyEQ, b);
+    processFilters (toneTilt, b);
     processFilters (toneLPF, b);
+    if (acousticVoicing) processFilters (airShelf, b);
 }
 
 } // namespace vroom

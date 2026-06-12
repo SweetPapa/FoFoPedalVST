@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { getSliderState } from '../juceBridge.js';
 
 // Vertical-drag knob bound to a JUCE WebSliderRelay parameter.
-// Drag up/down to change value; double-click to reset to default (0.5 norm).
-export default function Knob({ paramId, label, size = 120 }) {
+// Drag up/down to change value; Shift = fine. Double-click resets to default.
+// `color` is the SVG stroke for the active arc + indicator (rainbow panel).
+export default function Knob({ paramId, label, size = 110, color = '#ff8a3d' }) {
   const stateRef = useRef(null);
   const [norm, setNorm] = useState(0.5);
   const dragRef = useRef({ active: false, startY: 0, startVal: 0 });
@@ -46,7 +47,6 @@ export default function Knob({ paramId, label, size = 120 }) {
     stateRef.current.sliderDragEnded?.();
   }, []);
 
-  // Arc maths: knob sweeps from -135° to +135°.
   const minAngle = -135;
   const maxAngle = 135;
   const angle = minAngle + (maxAngle - minAngle) * norm;
@@ -66,8 +66,13 @@ export default function Knob({ paramId, label, size = 120 }) {
   const [bex, bey] = toXY(maxAngle);
   const bgPath = `M ${bsx} ${bsy} A ${r} ${r} 0 1 1 ${bex} ${bey}`;
 
+  // Glow above 50% — gives the panel a sense of liveness when you're actually
+  // using the knob.
+  const glow = Math.max(0, (norm - 0.5) * 2);
+  const filterId = `glow-${paramId}`;
+
   return (
-    <div className="flex flex-col items-center select-none">
+    <div className="flex flex-col items-center select-none group">
       <svg
         width={size}
         height={size}
@@ -77,22 +82,56 @@ export default function Knob({ paramId, label, size = 120 }) {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onDoubleClick={onDoubleClick}
-        className="cursor-ns-resize touch-none"
+        className="cursor-ns-resize touch-none transition-transform duration-150 group-hover:scale-[1.03]"
       >
-        <circle cx={cx} cy={cy} r={r - 4} fill="#22262e" stroke="#2c313b" strokeWidth="2" />
+        <defs>
+          <filter id={filterId} x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation={2 + glow * 4} result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <radialGradient id={`face-${paramId}`} cx="50%" cy="40%" r="70%">
+            <stop offset="0%" stopColor="#2b313c" />
+            <stop offset="100%" stopColor="#1a1d24" />
+          </radialGradient>
+        </defs>
+
+        {/* Knob body */}
+        <circle cx={cx} cy={cy} r={r - 4} fill={`url(#face-${paramId})`} stroke="#2c313b" strokeWidth="2" />
+
+        {/* Track (full sweep, dim) */}
         <path d={bgPath} fill="none" stroke="#2c313b" strokeWidth="5" strokeLinecap="round" />
-        <path d={arcPath} fill="none" stroke="#ff8a3d" strokeWidth="5" strokeLinecap="round" />
+
+        {/* Value arc — glows when value is high */}
+        <path
+          d={arcPath}
+          fill="none"
+          stroke={color}
+          strokeWidth="5"
+          strokeLinecap="round"
+          filter={glow > 0.05 ? `url(#${filterId})` : undefined}
+          opacity={0.55 + 0.45 * norm}
+        />
+
+        {/* Indicator line */}
         <line
           x1={cx}
           y1={cy}
           x2={cx + (r - 14) * Math.cos(((angle - 90) * Math.PI) / 180)}
           y2={cy + (r - 14) * Math.sin(((angle - 90) * Math.PI) / 180)}
-          stroke="#e6e6e6"
+          stroke={color}
           strokeWidth="3"
           strokeLinecap="round"
         />
+
+        {/* Center dot */}
+        <circle cx={cx} cy={cy} r="2.5" fill={color} opacity="0.8" />
       </svg>
-      <div className="mt-2 text-xs uppercase tracking-[0.25em] text-vroom-dim">{label}</div>
+      <div className="mt-1.5 text-[10px] uppercase tracking-[0.25em]" style={{ color }}>
+        {label}
+      </div>
       <div className="text-sm tabular-nums text-vroom-ink">{Math.round(norm * 100)}</div>
     </div>
   );

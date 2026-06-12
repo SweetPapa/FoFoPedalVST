@@ -22,16 +22,19 @@ void Sag::process (juce::AudioBuffer<float>& buffer) noexcept
     const int nS  = buffer.getNumSamples();
     const float sr = (float) spec.sampleRate;
 
-    // Attack ~5 ms (catch transients without smearing). Release maps from
-    // ~60 ms at low Sag to ~600 ms at full Sag — the latter is what gives
-    // notes a singing, "blooming" sustain.
-    constexpr float attackMs = 5.0f;
-    const float releaseMs = juce::jmap (sagAmount, 0.0f, 1.0f, 60.0f, 600.0f);
+    // Attack ~8 ms — let the pick attack through BEFORE the supply dips, then
+    // duck and bloom back. (An instant dip just reads as compression; the
+    // slight lag is what reads as a power supply being yanked down.)
+    // Release maps from ~80 ms at low Sag to ~500 ms at full Sag.
+    constexpr float attackMs = 8.0f;
+    const float releaseMs = juce::jmap (sagAmount, 0.0f, 1.0f, 80.0f, 500.0f);
     const float attackCoef  = std::exp (-1.0f / (attackMs  * 0.001f * sr));
     const float releaseCoef = std::exp (-1.0f / (releaseMs * 0.001f * sr));
 
-    // Max instantaneous gain reduction at full Sag: ~50%.
-    const float dipDepth = sagAmount * 0.5f;
+    // Max post-clip dip ~35% — the other half of the sag effect (bias and
+    // headroom modulation) now lives inside the Saturator, so this block
+    // only needs the level bloom, not the whole illusion.
+    const float dipDepth = sagAmount * 0.35f * responseScale;
 
     for (int ch = 0; ch < nCh; ++ch)
     {
@@ -44,10 +47,10 @@ void Sag::process (juce::AudioBuffer<float>& buffer) noexcept
             const float coef = (a > env) ? attackCoef : releaseCoef;
             env = coef * env + (1.0f - coef) * a;
 
-            // Soft-clamp the envelope to [0,1] so gain stays in a sane range
-            // even with hot input.
+            // env^1.5 keeps the dip focused on real transients — light
+            // playing barely moves it, digging in pulls the supply down.
             const float e = juce::jmin (env, 1.0f);
-            const float g = 1.0f - dipDepth * e;
+            const float g = 1.0f - dipDepth * e * std::sqrt (e);
             d[n] *= g;
         }
 
