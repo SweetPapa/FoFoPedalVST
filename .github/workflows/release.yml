@@ -1,0 +1,200 @@
+# Release pipeline — push a tag like v0.2.0 and this builds, signs, notarizes
+# and publishes both installers to GitHub Releases with AI release notes.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Asset names are STABLE across versions so the website's
+# /releases/latest/download/ links never need updating:
+#   SweetPapaPedals-macOS.pkg
+#   SweetPapaPedals-Windows-Setup.exe
+#
+# All signing is optional-but-automatic: each signing step runs only when its
+# secrets exist, so the pipeline works (unsigned) before credentials are added.
+# Required secrets are documented in RELEASING.md.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  # ───────────────────────────── macOS ──────────────────────────────────────
+  build-macos:
+    runs-on: macos-14
+    env:
+      HAVE_APPLE_CERTS: ${{ secrets.APPLE_CERT_P12 != '' }}
+      HAVE_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Build plugin UIs
+        run: |
+          for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui; do
+            (cd "$d" && npm ci && npm run build)
+          done
+
+      - name: Build plugins (Release)
+        run: |
+          cmake -B build
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
+            cmake --build build --target "${t}_VST3" --config Release
+            cmake --build build --target "${t}_AU"   --config Release
+          done
+
+      - name: Import signing certificates
+        if: env.HAVE_APPLE_CERTS == 'true'
+        env:
+          P12_B64: ${{ secrets.APPLE_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PW="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PW" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PW" build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
+          echo "$P12_B64" | base64 -d > /tmp/certs.p12
+          security import /tmp/certs.p12 -k build.keychain -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/pkgbuild -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PW" build.keychain
+          rm /tmp/certs.p12
+
+      - name: Set up notarization profile
+        if: env.HAVE_APPLE_CERTS == 'true' && env.HAVE_NOTARY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials ci-notary \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          echo "NOTARY_PROFILE=ci-notary" >> "$GITHUB_ENV"
+
+      - name: Build installer (signs + notarizes when credentials exist)
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          export VERSION="${VERSION#v}"
+          if [ "$HAVE_APPLE_CERTS" != "true" ]; then export SIGN_ID=none; fi
+          ./scripts/build-installer-macos.sh
+          cp "dist/SweetPapaPedals-$VERSION.pkg" "dist/SweetPapaPedals-macOS.pkg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/*.pkg
+
+  # ──────────────────────────── Windows ─────────────────────────────────────
+  build-windows:
+    runs-on: windows-2022
+    env:
+      HAVE_AZURE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Build plugins + installer (unsigned)
+        shell: pwsh
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          $env:VERSION = $env:VERSION.TrimStart('v')
+          powershell -ExecutionPolicy Bypass -File windows\build.ps1
+
+      - name: Sign installer (Azure Trusted Signing)
+        if: env.HAVE_AZURE_SIGNING == 'true'
+        uses: azure/trusted-signing-action@v0.5.9
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Stable asset name
+        shell: pwsh
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          $v = $env:VERSION.TrimStart('v')
+          Copy-Item "dist\SweetPapaPedals-Setup-$v.exe" "dist\SweetPapaPedals-Windows-Setup.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*.exe
+
+  # ──────────────────────────── Publish ─────────────────────────────────────
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    env:
+      HAVE_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/download-artifact@v4
+        with: { path: assets, merge-multiple: true }
+
+      - name: Generate release notes (AI + auto)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          RANGE=${PREV:+$PREV..}$TAG
+          LOG=$(git log --oneline --no-merges $RANGE | head -100)
+
+          # GitHub's auto-generated notes as the base
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" ${PREV:+-f previous_tag_name="$PREV"} \
+            --jq .body > auto-notes.md || echo "" > auto-notes.md
+
+          if [ "$HAVE_ANTHROPIC" = "true" ] && [ -n "$LOG" ]; then
+            BODY=$(jq -n --arg log "$LOG" --arg tag "$TAG" '{
+              model: "claude-sonnet-4-6",
+              max_tokens: 1200,
+              messages: [{role: "user", content: ("Write friendly, musician-facing release notes for Sweet Papa Pedals " + $tag + " (free VST3/AU pedals for indie rock). Summarize what changed in plain language a producer cares about — sound, workflow, fixes — from these commits. Use 2-4 short sections with emoji headers. No preamble, markdown only.\n\nCommits:\n" + $log)}]
+            }')
+            curl -s https://api.anthropic.com/v1/messages \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d "$BODY" | jq -r '.content[0].text // empty' > ai-notes.md || true
+          fi
+
+          {
+            if [ -s ai-notes.md ]; then cat ai-notes.md; echo; echo "---"; echo; fi
+            cat auto-notes.md
+            echo
+            echo "### Install"
+            echo "- **macOS**: download \`SweetPapaPedals-macOS.pkg\`, double-click. Installs AU + VST3 for all DAWs."
+            echo "- **Windows**: download \`SweetPapaPedals-Windows-Setup.exe\` and run it."
+            echo
+            echo "🎛 [pedal.fofo.dev](https://pedal.fofo.dev)"
+          } > notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --title "Sweet Papa Pedals $TAG" \
+            --notes-file notes.md \
+            assets/*

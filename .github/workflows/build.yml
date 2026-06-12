@@ -1,0 +1,65 @@
+# Builds all six pedals for macOS and Windows on every push/PR to main.
+# Artifacts are unsigned — signing happens locally (Azure Trusted Signing on
+# Windows via windows/build.ps1; Apple Developer ID via
+# scripts/build-installer-macos.sh once an identity exists).
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macos
+          - os: windows-2022
+            name: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build plugin UIs
+        shell: bash
+        run: |
+          for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui; do
+            (cd "$d" && npm ci && npm run build)
+          done
+
+      - name: Configure
+        run: cmake -B build ${{ matrix.name == 'windows' && '-G "Visual Studio 17 2022" -A x64' || '' }}
+
+      - name: Build (Release)
+        shell: bash
+        run: |
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
+            cmake --build build --target "${t}_VST3" --config Release
+            if [ "${{ matrix.name }}" = "macos" ]; then
+              cmake --build build --target "${t}_AU" --config Release
+            fi
+          done
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p out
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
+            cp -R "build/${t}_artefacts/Release/VST3/${t}.vst3" out/
+            if [ "${{ matrix.name }}" = "macos" ]; then
+              cp -R "build/${t}_artefacts/Release/AU/${t}.component" out/
+            fi
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sweet-papa-pedals-${{ matrix.name }}
+          path: out/

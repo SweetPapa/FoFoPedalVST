@@ -1,0 +1,40 @@
+# Deploys the marketing site to Firebase Hosting (site: fofo-pedals →
+# pedal.fofo.dev) whenever site/ changes on main. Needs the
+# FIREBASE_SERVICE_ACCOUNT_FOFOAPPS secret (see RELEASING.md).
+name: deploy-site
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: site/pnpm-lock.yaml }
+
+      - name: Build site
+        working-directory: site
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_FOFOAPPS }}
+          projectId: fofoapps-934be
+          target: pedals
+          channelId: live
+          entryPoint: site

@@ -10,6 +10,12 @@ cmake-build-*/
 *.xcodeproj/
 *.xcworkspace/
 
-# UI build artifacts
-ui/node_modules/
-ui/dist/
+# UI build artifacts (all six plugin UIs)
+**/node_modules/
+**/ui/dist/
+
+# Release artifacts
+dist/
+
+# tooling artifacts
+.playwright-mcp/
