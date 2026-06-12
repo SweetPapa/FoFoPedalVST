@@ -25,7 +25,7 @@ jobs:
   build-macos:
     runs-on: macos-14
     env:
-      HAVE_APPLE_CERTS: ${{ secrets.APPLE_CERT_P12 != '' }}
+      HAVE_APPLE_CERTS: ${{ secrets.APPLE_CERT_APP_P12 != '' }}
       HAVE_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +52,8 @@ jobs:
       - name: Import signing certificates
         if: env.HAVE_APPLE_CERTS == 'true'
         env:
-          P12_B64: ${{ secrets.APPLE_CERT_P12 }}
+          APP_P12_B64: ${{ secrets.APPLE_CERT_APP_P12 }}
+          INSTALLER_P12_B64: ${{ secrets.APPLE_CERT_INSTALLER_P12 }}
           P12_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
         run: |
           KEYCHAIN_PW="$(uuidgen)"
@@ -60,11 +61,14 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PW" build.keychain
           security set-keychain-settings -lut 3600 build.keychain
-          echo "$P12_B64" | base64 -d > /tmp/certs.p12
-          security import /tmp/certs.p12 -k build.keychain -P "$P12_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/pkgbuild -T /usr/bin/productsign
+          echo "$APP_P12_B64"       | base64 -d > /tmp/app.p12
+          echo "$INSTALLER_P12_B64" | base64 -d > /tmp/installer.p12
+          for f in /tmp/app.p12 /tmp/installer.p12; do
+            security import "$f" -k build.keychain -P "$P12_PASSWORD" \
+              -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/pkgbuild -T /usr/bin/productsign
+          done
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PW" build.keychain
-          rm /tmp/certs.p12
+          rm /tmp/app.p12 /tmp/installer.p12
 
       - name: Set up notarization profile
         if: env.HAVE_APPLE_CERTS == 'true' && env.HAVE_NOTARY == 'true'
@@ -144,7 +148,9 @@ jobs:
     needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     env:
-      HAVE_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      HAVE_VERTEX: ${{ secrets.VERTEX_SA_KEY != '' }}
+      VERTEX_PROJECT: sweet-papa-technologies
+      VERTEX_MODEL: gemini-3.5-flash
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -152,10 +158,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: assets, merge-multiple: true }
 
-      - name: Generate release notes (AI + auto)
+      - name: Authenticate to Google Cloud (Vertex AI)
+        if: env.HAVE_VERTEX == 'true'
+        id: gauth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.VERTEX_SA_KEY }}
+          token_format: access_token
+
+      - name: Generate release notes (Gemini + auto)
         env:
           GH_TOKEN: ${{ github.token }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GCP_TOKEN: ${{ steps.gauth.outputs.access_token }}
           TAG: ${{ github.ref_name }}
         run: |
           PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
@@ -167,17 +181,16 @@ jobs:
             -f tag_name="$TAG" ${PREV:+-f previous_tag_name="$PREV"} \
             --jq .body > auto-notes.md || echo "" > auto-notes.md
 
-          if [ "$HAVE_ANTHROPIC" = "true" ] && [ -n "$LOG" ]; then
+          if [ "$HAVE_VERTEX" = "true" ] && [ -n "$LOG" ]; then
             BODY=$(jq -n --arg log "$LOG" --arg tag "$TAG" '{
-              model: "claude-sonnet-4-6",
-              max_tokens: 1200,
-              messages: [{role: "user", content: ("Write friendly, musician-facing release notes for Sweet Papa Pedals " + $tag + " (free VST3/AU pedals for indie rock). Summarize what changed in plain language a producer cares about — sound, workflow, fixes — from these commits. Use 2-4 short sections with emoji headers. No preamble, markdown only.\n\nCommits:\n" + $log)}]
+              contents: [{role: "user", parts: [{text: ("Write friendly, musician-facing release notes for Sweet Papa Pedals " + $tag + " (free VST3/AU pedals for indie rock). Summarize what changed in plain language a producer cares about — sound, workflow, fixes — from these commits. Use 2-4 short sections with emoji headers. No preamble, markdown only.\n\nCommits:\n" + $log)}]}],
+              generationConfig: {maxOutputTokens: 2048}
             }')
-            curl -s https://api.anthropic.com/v1/messages \
-              -H "x-api-key: $ANTHROPIC_API_KEY" \
-              -H "anthropic-version: 2023-06-01" \
-              -H "content-type: application/json" \
-              -d "$BODY" | jq -r '.content[0].text // empty' > ai-notes.md || true
+            curl -s "https://aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/global/publishers/google/models/${VERTEX_MODEL}:generateContent" \
+              -H "Authorization: Bearer $GCP_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$BODY" \
+              | jq -r '[.candidates[0].content.parts[]? | select(.text) | .text] | join("")' > ai-notes.md || true
           fi
 
           {

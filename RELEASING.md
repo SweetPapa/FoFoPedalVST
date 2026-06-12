@@ -24,51 +24,36 @@ day one.
 ## Secrets checklist (GitHub → repo → Settings → Secrets → Actions)
 
 ### Firebase site deploys — DONE ✓
-- `FIREBASE_SERVICE_ACCOUNT_FOFOAPPS` — already set from the local
-  `fofoapps-sa.json` admin service account.
+- `FIREBASE_SERVICE_ACCOUNT_FOFOAPPS` — set from the FoFoApps admin SA.
+  Custom domain `pedal.fofo.dev` is live.
 
-### Apple signing + notarization (macOS job)
-| Secret | What it is |
-|---|---|
-| `APPLE_CERT_P12` | Base64 of a .p12 export containing BOTH personal certs: **Developer ID Application: Forrester Terry (6Y5SZ2K5XY)** and **Developer ID Installer: Forrester Terry (6Y5SZ2K5XY)** with their private keys |
-| `APPLE_CERT_PASSWORD` | The password you set on that .p12 |
-| `APPLE_ID` | Your Apple ID email |
-| `APPLE_TEAM_ID` | `6Y5SZ2K5XY` |
-| `APPLE_APP_PASSWORD` | App-specific password from appleid.apple.com → Sign-In & Security → App-Specific Passwords |
+### AI release notes (Vertex AI) — DONE ✓
+- `VERTEX_SA_KEY` — the existing `vertext-ai@sweet-papa-technologies` service
+  account. Notes are written by **Gemini 3.5 Flash** on Vertex (global
+  endpoint, project `sweet-papa-technologies`) from the commit log, with
+  GitHub auto-notes appended. Model/project are env vars at the top of the
+  `release` job in `.github/workflows/release.yml`.
 
-To export the .p12 (one time, on this Mac):
-1. Keychain Access → My Certificates → ⌘-click select both *Forrester Terry (6Y5SZ2K5XY)* "Developer ID" entries (Application **and** Installer, with their keys).
-2. File → Export Items… → .p12, set a password.
-3. `base64 -i certs.p12 | pbcopy` → paste into the `APPLE_CERT_P12` secret.
+### Azure Trusted Signing (Windows job) — DONE ✓
+- Service principal `sweetpapa-pedals-ci` with the **Artifact Signing
+  Certificate Profile Signer** role on account `spt-cert` (rg `spt`),
+  profile `forrester-personal`, endpoint `https://eus.codesigning.azure.net/`.
+- Secrets set: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`,
+  `TRUSTED_SIGNING_ENDPOINT`, `TRUSTED_SIGNING_ACCOUNT`, `TRUSTED_SIGNING_PROFILE`.
+- (Local fallback on Infinity still works via `windows\build.ps1`.)
 
-### Azure Trusted Signing (Windows job)
-Create an App Registration (service principal) in Entra ID and give it the
-**Trusted Signing Certificate Profile Signer** role on your signing account,
-then set:
-
-| Secret | What it is |
-|---|---|
-| `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` | The service principal credentials |
-| `TRUSTED_SIGNING_ENDPOINT` | e.g. `https://eus.codesigning.azure.net/` |
-| `TRUSTED_SIGNING_ACCOUNT` | Your Trusted Signing account name |
-| `TRUSTED_SIGNING_PROFILE` | Your certificate profile name |
-
-(Your existing local setup on Infinity keeps working via `windows\build.ps1`
-as a fallback; CI uses the same Azure account through the official action.)
-
-### AI release notes (optional)
-| Secret | What it is |
-|---|---|
-| `ANTHROPIC_API_KEY` | Any Claude API key — release notes are written by `claude-sonnet-4-6` from the commit log. Without it, GitHub's auto-generated notes are used alone. |
-
-## One-time manual steps (outside GitHub)
-
-1. **DNS / custom domain**: Firebase Console → Hosting → site `fofo-pedals` →
-   *Add custom domain* → `pedal.fofo.dev`. It will give you an A record (or
-   CNAME) + a TXT verification record to add at your DNS host. SSL provisions
-   automatically after that (can take an hour).
-2. **App-specific password** (Apple) — see table above; only you can create it.
-3. **Azure service principal** — see above; needs your Azure portal access.
+### Apple signing + notarization — run one script
+```bash
+./scripts/setup-apple-ci-signing.sh
+```
+It exports ONLY your personal Developer ID identities (team `6Y5SZ2K5XY` —
+Stanford certs are never touched), builds the .p12s, and sets all the
+secrets (`APPLE_CERT_APP_P12`, `APPLE_CERT_INSTALLER_P12`,
+`APPLE_CERT_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_ID`, `APPLE_APP_PASSWORD`).
+Before running, create an app-specific password at
+https://account.apple.com → Sign-In & Security → App-Specific Passwords
+so you can paste it when prompted. Expect several macOS keychain "Allow"
+dialogs during the export.
 
 ## Local fallbacks
 

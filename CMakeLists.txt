@@ -82,6 +82,9 @@ target_compile_definitions(VROOM PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
 )
 
 target_link_libraries(VROOM PRIVATE
@@ -148,6 +151,9 @@ target_compile_definitions(DAYDREAM PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
 )
 
 target_link_libraries(DAYDREAM PRIVATE
@@ -220,6 +226,9 @@ target_compile_definitions(FOFOPEDAL PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
 )
 
 target_link_libraries(FOFOPEDAL PRIVATE
@@ -281,6 +290,9 @@ target_compile_definitions(DOUBLE PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
 )
 
 target_link_libraries(DOUBLE PRIVATE
@@ -342,6 +354,9 @@ target_compile_definitions(BACKPORCH PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
 )
 
 target_link_libraries(BACKPORCH PRIVATE
@@ -403,6 +418,9 @@ target_compile_definitions(SWAY PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
 )
 
 target_link_libraries(SWAY PRIVATE

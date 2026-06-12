@@ -204,10 +204,10 @@ Preset PresetManager::readJsonFile (const juce::File& f) const
     if (! root.isObject()) return p;
 
     p.schemaVersion = (int)  root.getProperty ("schemaVersion", 1);
-    p.name          = (juce::String) root.getProperty ("name", f.getFileNameWithoutExtension());
-    p.category      = (juce::String) root.getProperty ("category", "Electric");
-    p.vibe          = (juce::String) root.getProperty ("vibe", "Custom");
-    p.author        = (juce::String) root.getProperty ("author", "User");
+    p.name          = root.getProperty ("name", f.getFileNameWithoutExtension()).toString();
+    p.category      = root.getProperty ("category", "Electric").toString();
+    p.vibe          = root.getProperty ("vibe", "Custom").toString();
+    p.author        = root.getProperty ("author", "User").toString();
 
     auto params = root.getProperty ("parameters", juce::var());
     if (params.isObject())
@@ -221,11 +221,11 @@ Preset PresetManager::readJsonFile (const juce::File& f) const
         p.blend        = (float) (double) params.getProperty ("blend", p.blend);
         p.level        = (float) (double) params.getProperty ("level", p.level);
         p.gate         = (float) (double) params.getProperty ("gate", p.gate);
-        p.sourceMode   = (juce::String) params.getProperty ("sourceMode", p.sourceMode);
+        p.sourceMode   = params.getProperty ("sourceMode", p.sourceMode).toString();
         p.cabEnable    = (bool) params.getProperty ("cabEnable", p.cabEnable);
-        p.cabIR        = (juce::String) params.getProperty ("cabIR", p.cabIR);
-        p.oversampling = (juce::String) params.getProperty ("oversampling", p.oversampling);
-        p.clipShape    = (juce::String) params.getProperty ("clipShape", p.clipShape);
+        p.cabIR        = params.getProperty ("cabIR", p.cabIR).toString();
+        p.oversampling = params.getProperty ("oversampling", p.oversampling).toString();
+        p.clipShape    = params.getProperty ("clipShape", p.clipShape).toString();
     }
     return p;
 }
