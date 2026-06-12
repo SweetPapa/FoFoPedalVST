@@ -1,0 +1,268 @@
+// Sweet Papa Pedals — site theme.
+// Dark warm "pedalboard at dusk": near-black brown base, cream ink,
+// per-pedal accent colors driven by catalog.json.
+
+:root {
+  --bg: #14100c;
+  --bg-raise: #1d1712;
+  --edge: #2e2620;
+  --ink: #f2eadf;
+  --dim: #a3958a;
+  --brand: #ff8a3d;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', 'Roboto', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sp-site {
+  background:
+    radial-gradient(ellipse 90% 40% at 50% -10%, rgba(255, 138, 61, 0.07), transparent 60%),
+    var(--bg);
+  // Creates a stacking context so the negative-z aurora layers paint above
+  // THIS element's background (without it they fall to the root context and
+  // end up underneath the opaque body background — i.e., invisible).
+  isolation: isolate;
+}
+
+// ── Ambient flow ─────────────────────────────────────────────────────────────
+// Three full-viewport layers in the pedal accent colors:
+//   ::before — big aurora blobs spread across the whole page, drifting
+//   ::after  — counter-drifting second set, offset placement
+//   .sp-flow — a wide diagonal color sheen that continuously sweeps through
+// Transform-only (GPU compositor); disabled under prefers-reduced-motion.
+.sp-site::before,
+.sp-site::after,
+.sp-flow {
+  content: '';
+  position: fixed;
+  inset: -35%;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+.sp-site::before {
+  background:
+    radial-gradient(ellipse 34% 26% at 20% 22%, rgba(255, 138, 61, 0.18), transparent 70%),
+    radial-gradient(ellipse 36% 28% at 80% 16%, rgba(192, 132, 255, 0.13), transparent 70%),
+    radial-gradient(ellipse 30% 24% at 50% 55%, rgba(255, 180, 84, 0.08), transparent 70%);
+  animation: sp-drift-a 45s ease-in-out infinite alternate;
+}
+.sp-site::after {
+  background:
+    radial-gradient(ellipse 34% 26% at 72% 76%, rgba(107, 232, 194, 0.12), transparent 70%),
+    radial-gradient(ellipse 30% 24% at 26% 72%, rgba(255, 155, 107, 0.13), transparent 70%),
+    radial-gradient(ellipse 26% 22% at 88% 45%, rgba(76, 222, 240, 0.08), transparent 70%);
+  animation: sp-drift-b 60s ease-in-out infinite alternate;
+}
+.sp-flow {
+  background: linear-gradient(115deg,
+    transparent 12%,
+    rgba(255, 138, 61, 0.07) 32%,
+    rgba(192, 132, 255, 0.09) 48%,
+    rgba(107, 232, 194, 0.07) 64%,
+    transparent 86%);
+  animation: sp-sweep 26s ease-in-out infinite alternate;
+}
+
+@keyframes sp-drift-a {
+  0%   { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50%  { transform: translate(9%, -6%) scale(1.15) rotate(5deg); }
+  100% { transform: translate(-8%, 7%) scale(0.92) rotate(-5deg); }
+}
+@keyframes sp-drift-b {
+  0%   { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50%  { transform: translate(-9%, 5%) scale(1.12) rotate(-5deg); }
+  100% { transform: translate(8%, -7%) scale(0.94) rotate(5deg); }
+}
+@keyframes sp-sweep {
+  0%   { transform: translateX(-18%) translateY(-4%); }
+  100% { transform: translateX(18%) translateY(4%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-site::before,
+  .sp-site::after,
+  .sp-flow { animation: none; }
+}
+
+// ── Header ──────────────────────────────────────────────────────────────────
+.sp-header {
+  background: rgba(20, 16, 12, 0.85) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--edge);
+  box-shadow: none !important;
+}
+.sp-toolbar { max-width: 1100px; margin: 0 auto; width: 100%; }
+.sp-logo {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--ink); font-size: 17px; letter-spacing: 0.02em;
+  .sp-logo-mark { color: var(--brand); font-size: 20px; }
+  b { font-weight: 800; }
+}
+.sp-nav-link {
+  color: var(--dim); text-decoration: none; margin-left: 22px; font-size: 14px;
+  letter-spacing: 0.04em;
+  &:hover { color: var(--ink); }
+}
+.sp-nav-portfolio { color: var(--brand); }
+
+// ── Hero ────────────────────────────────────────────────────────────────────
+.sp-hero { padding: 96px 24px 72px; }
+.sp-hero-inner { max-width: 880px; margin: 0 auto; text-align: center; }
+.sp-hero-title {
+  font-size: clamp(40px, 7vw, 72px);
+  line-height: 1.04; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 24px;
+  em { font-style: normal; color: var(--brand); }
+}
+.sp-hero-sub {
+  font-size: clamp(17px, 2.2vw, 21px); line-height: 1.55; color: var(--dim);
+  max-width: 640px; margin: 0 auto 36px;
+  strong { color: var(--ink); font-weight: 600; }
+}
+.sp-hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.sp-hero-note { margin-top: 18px; font-size: 13px; color: var(--dim); }
+
+.sp-btn-primary {
+  background: var(--brand) !important; color: #1a1208 !important;
+  font-weight: 700; border-radius: 12px; padding: 0 28px;
+}
+.sp-btn-secondary { color: var(--ink) !important; border-radius: 12px; }
+
+// ── Sections ────────────────────────────────────────────────────────────────
+.sp-section { max-width: 1100px; margin: 0 auto; padding: 56px 24px; }
+.sp-section-title {
+  font-size: clamp(26px, 4vw, 36px); font-weight: 800; letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.sp-section-sub { color: var(--dim); max-width: 660px; margin: 0 0 36px; line-height: 1.6; }
+
+// ── Pedal grid / cards ──────────────────────────────────────────────────────
+.sp-grid {
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.sp-card {
+  display: flex; flex-direction: column;
+  background: var(--bg-raise);
+  border: 1px solid var(--edge);
+  border-radius: 16px; padding: 22px;
+  text-decoration: none; color: var(--ink);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  &:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--edge));
+    box-shadow: 0 12px 36px -16px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+.sp-card-shot {
+  margin: -22px -22px 14px; // bleed to the card edges
+  border-radius: 15px 15px 0 0; overflow: hidden;
+  border-bottom: 1px solid var(--edge);
+  background: #000;
+  img { display: block; width: 100%; height: 180px; object-fit: cover; object-position: top center; }
+}
+.sp-card-cat {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--dim);
+}
+.sp-card-name { font-size: 24px; font-weight: 800; letter-spacing: 0.05em; margin: 14px 0 2px; }
+.sp-card-tag { font-size: 15px; color: var(--ink); margin: 0 0 10px; font-style: italic; opacity: 0.9; }
+.sp-card-short { font-size: 14px; line-height: 1.55; color: var(--dim); flex: 1; }
+.sp-card-foot {
+  display: flex; justify-content: space-between; align-items: center; margin-top: 16px;
+}
+.sp-card-free {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.12em;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 999px; padding: 3px 10px;
+}
+.sp-card-more { font-size: 13px; color: var(--dim); }
+.sp-card:hover .sp-card-more { color: var(--ink); }
+
+// ── Install ─────────────────────────────────────────────────────────────────
+.sp-install-cols { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.sp-install-card {
+  background: var(--bg-raise); border: 1px solid var(--edge); border-radius: 16px; padding: 24px;
+  h3 { margin: 0 0 10px; font-size: 18px; font-weight: 700; }
+  p { color: var(--dim); line-height: 1.6; margin: 0; }
+}
+.sp-install-daws { color: var(--dim); font-size: 14px; margin-top: 24px; max-width: 660px; }
+
+// ── Why ─────────────────────────────────────────────────────────────────────
+.sp-why p { color: var(--dim); line-height: 1.7; max-width: 720px; font-size: 16px;
+  a { color: var(--brand); text-decoration: none; &:hover { text-decoration: underline; } }
+}
+
+// ── Pedal detail page ───────────────────────────────────────────────────────
+.sp-pedal-hero {
+  padding: 72px 24px 56px;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% -20%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%);
+  border-bottom: 1px solid var(--edge);
+}
+.sp-pedal-hero-inner { max-width: 880px; margin: 0 auto; text-align: center; }
+.sp-crumb { color: var(--dim); text-decoration: none; font-size: 14px; &:hover { color: var(--ink); } }
+.sp-pedal-cat {
+  margin-top: 26px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--dim);
+}
+.sp-pedal-name {
+  font-size: clamp(48px, 9vw, 84px); font-weight: 800; letter-spacing: 0.04em;
+  margin: 6px 0 4px; color: var(--accent);
+}
+.sp-pedal-tagline { font-size: clamp(18px, 2.6vw, 24px); font-style: italic; color: var(--ink); margin: 0 0 32px; }
+.sp-pedal-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.sp-pedal-note { margin-top: 16px; font-size: 13px; color: var(--dim); }
+.sp-pedal-cta .sp-btn-primary { background: var(--accent) !important; }
+.sp-pedal-shot {
+  margin: 40px auto 0; max-width: 720px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--edge));
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 24px 70px -28px color-mix(in srgb, var(--accent) 55%, transparent);
+  img { display: block; width: 100%; height: auto; }
+}
+
+.sp-pedal-cols {
+  display: grid; gap: 40px; grid-template-columns: 1.4fr 1fr;
+  @media (max-width: 800px) { grid-template-columns: 1fr; }
+}
+.sp-pedal-desc {
+  p { color: var(--ink); opacity: 0.92; line-height: 1.7; font-size: 16px; }
+  h2 { font-size: 20px; font-weight: 700; margin: 28px 0 10px; }
+  ul { color: var(--dim); line-height: 1.8; padding-left: 20px; }
+}
+.sp-pedal-panel {
+  background: var(--bg-raise); border: 1px solid var(--edge); border-radius: 16px;
+  padding: 24px; height: fit-content;
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--dim); margin: 22px 0 14px; }
+  h2:first-child { margin-top: 0; }
+}
+.sp-controls {
+  margin: 0;
+  dt { font-weight: 800; letter-spacing: 0.06em; font-size: 14px; margin-top: 12px; }
+  dt:first-of-type { margin-top: 0; }
+  dd { margin: 2px 0 0; color: var(--dim); font-size: 14px; line-height: 1.5; }
+}
+.sp-modes { display: flex; flex-wrap: wrap; gap: 8px; }
+.sp-mode-chip {
+  font-size: 12px; color: var(--ink); background: rgba(255,255,255,0.05);
+  border: 1px solid var(--edge); border-radius: 999px; padding: 4px 12px;
+}
+.sp-pedal-others { margin-top: 64px; h2 { font-size: 22px; font-weight: 800; margin-bottom: 20px; } }
+
+// ── Footer ──────────────────────────────────────────────────────────────────
+.sp-footer { border-top: 1px solid var(--edge); padding: 40px 24px; margin-top: 40px; }
+.sp-footer-inner {
+  max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 24px;
+  justify-content: space-between; align-items: baseline;
+}
+.sp-footer-brand { font-weight: 800; }
+.sp-footer-dim { color: var(--dim); font-size: 13px; }
+.sp-footer-links {
+  display: flex; gap: 20px;
+  a { color: var(--dim); text-decoration: none; font-size: 14px; &:hover { color: var(--brand); } }
+}

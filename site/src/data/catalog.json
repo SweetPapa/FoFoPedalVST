@@ -1,0 +1,343 @@
+{
+  "site": {
+    "name": "Sweet Papa Pedals",
+    "tagline": "Six free pedals for indie-rock production",
+    "description": "Free VST3 & AU audio plugins for indie rock and bedroom pop — vocal doubler, ducked reverb, tape wobble, saturation, ambient wash and a 12-character multi-FX. macOS & Windows. By Sweet Papa Technologies.",
+    "url": "https://pedal.fofo.dev",
+    "company": "Sweet Papa Technologies",
+    "portfolio": {
+      "label": "fofo.dev",
+      "url": "https://fofo.dev"
+    },
+    "github": "https://github.com/SweetPapa/FoFoPedalVST",
+    "keywords": [
+      "free VST plugins",
+      "free AU plugins",
+      "indie rock plugins",
+      "bedroom pop production",
+      "free vocal doubler VST",
+      "free reverb VST",
+      "free tape saturation VST",
+      "lo-fi plugins free",
+      "VST3 free download",
+      "GarageBand audio units free",
+      "Sweet Papa Technologies"
+    ],
+    "installNotes": {
+      "mac": "Download the .pkg, double-click, done — installs AU + VST3 for every DAW (GarageBand, Logic, Ableton, Reaper…). If macOS warns about the developer, right-click the pkg and choose Open.",
+      "win": "Download the installer .exe and run it — installs the VST3s to the standard folder. Rescan plug-ins in your DAW."
+    }
+  },
+  "bundle": {
+    "name": "Sweet Papa Pedals — Complete Bundle",
+    "blurb": "All six pedals in one installer. Free.",
+    "downloads": {
+      "mac": "https://github.com/SweetPapa/FoFoPedalVST/releases/latest/download/SweetPapaPedals-macOS.pkg",
+      "win": "https://github.com/SweetPapa/FoFoPedalVST/releases/latest/download/SweetPapaPedals-Windows-Setup.exe"
+    },
+    "version": "0.1.0"
+  },
+  "pedals": [
+    {
+      "slug": "double",
+      "name": "DOUBLE",
+      "tagline": "Every take you didn't record",
+      "accent": "#ffb454",
+      "status": "free",
+      "category": "Doubler / Thickener",
+      "short": "Instant doubled takes: up to four micro-detuned voices that wander in pitch, timing and level like real players. Your dry signal passes untouched.",
+      "long": [
+        "DOUBLE is the take you didn't record. It layers up to four micro-detuned voices (±4–14 cents) under your dry signal — and unlike a chorus, every voice slowly wanders in pitch, timing and level, the way a singer or guitarist actually drifts between takes.",
+        "The dry path is never touched. The doubles are high-passed so they thicken without mud, the stereo spread folds down mono-safe, and the three modes re-voice the wet bus for vocals, guitars or synths."
+      ],
+      "controls": [
+        {
+          "name": "THICK",
+          "desc": "How many voices and how detuned"
+        },
+        {
+          "name": "WIDE",
+          "desc": "Stereo spread — mono-safe at any setting"
+        },
+        {
+          "name": "HUMAN",
+          "desc": "How much the takes wander, like real performances"
+        },
+        {
+          "name": "MIX",
+          "desc": "Layer the doubles under the untouched dry"
+        }
+      ],
+      "modes": [
+        "Vox",
+        "Strings",
+        "Synth"
+      ],
+      "goodFor": [
+        "Lead vocals",
+        "Stacked harmonies",
+        "Wide rhythm guitar",
+        "Synth thickening"
+      ],
+      "keywords": [
+        "free vocal doubler VST",
+        "vocal doubler plugin free",
+        "guitar doubler VST",
+        "microshift alternative free",
+        "stereo widener VST free"
+      ],
+      "image": "/screenshots/double.png"
+    },
+    {
+      "slug": "backporch",
+      "name": "BACKPORCH",
+      "tagline": "Sounds produced, not wet",
+      "accent": "#ff9b6b",
+      "status": "free",
+      "category": "Reverb / Space",
+      "short": "A short, dark production space that ducks out of the way while you play and breathes back in the gaps. Put it on a lead vocal at 50% and never worry.",
+      "long": [
+        "BACKPORCH is a reverb built backwards: instead of giving you a science panel to keep the tail from swamping your mix, the mix hygiene IS the pedal. The send is high-passed, the tail is pre-delayed behind the source, and a built-in ducker pushes the space down while you sing or play, letting it bloom back in the gaps.",
+        "Three rooms — a dark slapback echo, a small studio room, and a plate — each tuned so any knob position sits in a mix. This is the 'expensive record' space, not the 'demo drowned in reverb' space."
+      ],
+      "controls": [
+        {
+          "name": "SPACE",
+          "desc": "Size and decay together"
+        },
+        {
+          "name": "TONE",
+          "desc": "Darker or brighter tail"
+        },
+        {
+          "name": "DUCK",
+          "desc": "How much the tail hides while you play"
+        },
+        {
+          "name": "MIX",
+          "desc": "Dry stays at unity until 70% — always safe"
+        }
+      ],
+      "modes": [
+        "Slap",
+        "Room",
+        "Plate"
+      ],
+      "goodFor": [
+        "Lead vocals",
+        "Acoustic guitar",
+        "Drums that need glue",
+        "Anything that must stay upfront"
+      ],
+      "keywords": [
+        "free reverb VST",
+        "ducking reverb plugin",
+        "vocal reverb VST free",
+        "plate reverb free",
+        "slapback echo VST"
+      ],
+      "image": "/screenshots/backporch.png"
+    },
+    {
+      "slug": "sway",
+      "name": "SWAY",
+      "tagline": "Makes static tracks move like a band",
+      "accent": "#6be8c2",
+      "status": "free",
+      "category": "Modulation / Movement",
+      "short": "Subtle wow & flutter, drifting ensemble chorus, and breathing tremolo — driven by drift engines so nothing ever sits perfectly still.",
+      "long": [
+        "Perfectly static tracks are the fingerprint of cheap digital. SWAY adds the slow, organic movement of tape machines and old ensembles: every LFO inside is detuned and drifted by filtered noise, so even one knob past zero makes a synth or DI guitar feel played rather than programmed.",
+        "Tape mode is wow/flutter pitch drift. Ensemble is a three-voice chorus where each voice has its own wandering clock. Pump is a tremolo that breathes — the quiet half of the cycle also darkens slightly, like a tube amp working."
+      ],
+      "controls": [
+        {
+          "name": "MOVE",
+          "desc": "Total movement — the macro"
+        },
+        {
+          "name": "RATE",
+          "desc": "Speed, 0.05–8 Hz"
+        },
+        {
+          "name": "COLOR",
+          "desc": "Per-mode flavor: wow↔flutter / spread / trem shape"
+        },
+        {
+          "name": "MIX",
+          "desc": "Blend, defaults fully wet"
+        }
+      ],
+      "modes": [
+        "Tape",
+        "Ensemble",
+        "Pump"
+      ],
+      "goodFor": [
+        "Keys and pads",
+        "DI guitar",
+        "Lo-fi drums",
+        "Anything that feels frozen"
+      ],
+      "keywords": [
+        "wow and flutter VST free",
+        "tape wobble plugin",
+        "free chorus VST",
+        "tremolo plugin free",
+        "lo-fi movement plugin"
+      ],
+      "image": "/screenshots/sway.png"
+    },
+    {
+      "slug": "vroom",
+      "name": "VROOM",
+      "tagline": "The dirt pedal that lands in the mix",
+      "accent": "#ff8a3d",
+      "status": "free",
+      "category": "Saturation / Drive",
+      "short": "Four voices of touch-responsive dirt — tube warmth, crunch, fuzz, octave fuzz — with a loudness-compensated drive knob that changes texture, not volume.",
+      "long": [
+        "VROOM is a saturator that responds to how you play: an envelope follower shifts the bias point and squashes the headroom as you dig in, so it compresses and blooms on hard attacks and cleans up as notes decay — the behavior that makes real tube amps feel like instruments.",
+        "Four voices (Smooth tube, Crunch, Fuzz, Octave fuzz) each have their own tone shaping into and out of the clipper. The DRIVE knob is loudness-compensated so turning it up adds texture instead of just volume, and source modes re-voice the whole pedal for electric, acoustic, or bass."
+      ],
+      "controls": [
+        {
+          "name": "DRIVE",
+          "desc": "Texture, not volume — loudness compensated"
+        },
+        {
+          "name": "CHARACTER",
+          "desc": "Asymmetry / even-harmonic warmth"
+        },
+        {
+          "name": "TONE",
+          "desc": "Dark to bright, alive across its whole travel"
+        },
+        {
+          "name": "LEVEL",
+          "desc": "Output, with a transparent safety clip"
+        }
+      ],
+      "modes": [
+        "Smooth",
+        "Crunch",
+        "Fuzz",
+        "Octave"
+      ],
+      "goodFor": [
+        "Guitar dirt",
+        "Vocal grit",
+        "Bass drive (clean lows kept)",
+        "Drum bus crunch"
+      ],
+      "keywords": [
+        "free saturation VST",
+        "tube saturation plugin free",
+        "fuzz VST free",
+        "free distortion plugin",
+        "tape drive VST"
+      ],
+      "image": "/screenshots/vroom.png"
+    },
+    {
+      "slug": "daydream",
+      "name": "DAYDREAM",
+      "tagline": "One knob, from warm tape to dream",
+      "accent": "#c084ff",
+      "status": "free",
+      "category": "Ambient / Lo-fi",
+      "short": "One knob is the whole manual: warm tape saturation, then wobble and width, then a shimmering near-infinite wash that ducks under your playing.",
+      "long": [
+        "DAYDREAM is a journey on a single knob. The first third is warm tape — hysteresis saturation that dulls and squashes like real oxide. The middle adds wow, flutter and width. The top opens a shimmering, octave-climbing reverb wash with near-infinite decay — that automatically ducks out of the way while you play, so even maximum dream never buries the song.",
+        "There is nothing else to learn. Turn it until it feels right."
+      ],
+      "controls": [
+        {
+          "name": "DREAM",
+          "desc": "The whole pedal on one knob"
+        }
+      ],
+      "modes": [],
+      "goodFor": [
+        "Ambient guitar",
+        "Bedroom-pop vocals",
+        "Keys and textures",
+        "Instant atmosphere"
+      ],
+      "keywords": [
+        "free ambient VST",
+        "shimmer reverb free",
+        "lo-fi tape plugin free",
+        "one knob plugin",
+        "ambient guitar VST"
+      ],
+      "image": "/screenshots/daydream.png"
+    },
+    {
+      "slug": "fofopedal",
+      "name": "FOFOPEDAL",
+      "tagline": "Twelve characters, one MIX knob",
+      "accent": "#e8a87c",
+      "status": "free",
+      "category": "Multi-FX / Character",
+      "short": "Twelve hand-tuned characters — each is one produced sound, from 'Front Porch' to 'Vapor Trail' — and a single MIX knob that means 'how much pedal'.",
+      "long": [
+        "FOFOPEDAL is a six-block effect chain (character, drive, modulation, pitch, delay, space) curated into twelve named characters, each voiced for a source and a vibe: Front Porch is an acoustic hall. Cassette Sunday is a warbling tape. Dub Lounge is a ping-pong tape echo. Cathedral Larynx turns a vocal into a shimmering cathedral.",
+        "The MIX knob is the magnitude of the whole character — zero is clean, 70 is the tuned sound, 100 is full send. Delay repeats and reverb tails are ducked under your playing automatically. Deep per-block controls are there when you want them, ignorable when you don't."
+      ],
+      "controls": [
+        {
+          "name": "CHARACTER",
+          "desc": "Input conditioning — the console stage"
+        },
+        {
+          "name": "DRIVE",
+          "desc": "Tube / tape / transformer saturation"
+        },
+        {
+          "name": "SHAPE",
+          "desc": "Context-aware color per character"
+        },
+        {
+          "name": "TIME",
+          "desc": "Delay time, host-syncable"
+        },
+        {
+          "name": "SPACE",
+          "desc": "Reverb size + level macro"
+        },
+        {
+          "name": "MIX",
+          "desc": "How much pedal — scales the whole character"
+        }
+      ],
+      "modes": [
+        "Front Porch",
+        "Cassette Sunday",
+        "Cathedral Larynx",
+        "Dub Lounge",
+        "Shoebox Shoegaze",
+        "Nylon Velvet",
+        "Garage Vox",
+        "Pillow Bass",
+        "Synth Bath",
+        "Tin-Can Telephone",
+        "Slap and Float",
+        "Vapor Trail"
+      ],
+      "goodFor": [
+        "Produced sounds in one click",
+        "Vocals, guitar, bass, keys",
+        "Demos that sound finished"
+      ],
+      "keywords": [
+        "free multi effects VST",
+        "character plugin free",
+        "lo-fi multi FX",
+        "free vocal chain plugin",
+        "RC-20 alternative free"
+      ],
+      "image": "/screenshots/fofopedal.png"
+    }
+  ]
+}

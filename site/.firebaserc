@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "fofoapps-934be"
+  },
+  "targets": {
+    "fofoapps-934be": {
+      "hosting": {
+        "pedals": ["fofo-pedals"]
+      }
+    }
+  }
+}

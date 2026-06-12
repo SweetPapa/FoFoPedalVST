@@ -1,0 +1,43 @@
+{
+  "name": "fofo-pedals",
+  "version": "0.1.0",
+  "description": "Sweet Papa Pedals — six free VST3/AU plugins for indie-rock production",
+  "productName": "Sweet Papa Pedals",
+  "author": "Forrester Terry <fterry@stanford.edu>",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/gen-static.mjs && quasar dev",
+    "build": "node scripts/gen-static.mjs && quasar build && node scripts/postbuild.mjs",
+    "typecheck": "vue-tsc --noEmit",
+    "postinstall": "quasar prepare --silent"
+  },
+  "dependencies": {
+    "vue-i18n": "^11.3.0",
+    "pinia": "^3.0.1",
+    "@quasar/extras": "^2.0.0",
+    "quasar": "^2.20.0",
+    "vue": "^3.5.22",
+    "vue-router": "^5.0.6"
+  },
+  "devDependencies": {
+    "vue-tsc": "^3.3.3",
+    "@types/node": "^22.19.11",
+    "@intlify/unplugin-vue-i18n": "^11.0.0",
+    "@quasar/app-vite": "^3.0.0-rc.2",
+    "autoprefixer": "^10.4.27",
+    "typescript": "^6.0.0"
+  },
+  "keywords": [
+    "quasar",
+    "quasar-app",
+    "quasar-cli",
+    "quasar-app-vite",
+    "vite",
+    "vue",
+    "vuejs"
+  ],
+  "engines": {
+    "node": ">= 26 || ^24 || ^22.12"
+  }
+}
