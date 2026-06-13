@@ -110,3 +110,21 @@ jobs:
         with:
           name: sweet-papa-pedals-${{ matrix.name }}
           path: out/
+
+  # Single aggregation check for branch protection. A skipped matrix job
+  # never reports its per-platform check names, so protection requires THIS
+  # job instead: it passes when builds succeed or were legitimately skipped
+  # (no code changes), and fails when any build fails.
+  ci-ok:
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify pipeline result
+        run: |
+          echo "changes: ${{ needs.changes.result }} · build: ${{ needs.build.result }}"
+          if [ "${{ needs.changes.result }}" != "success" ]; then exit 1; fi
+          case "${{ needs.build.result }}" in
+            success|skipped) exit 0 ;;
+            *) exit 1 ;;
+          esac
