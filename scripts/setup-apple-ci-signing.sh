@@ -52,22 +52,32 @@ P12_PATH="${P12_PATH:-$HOME/Desktop/sweetpapa-signing.p12}"
 P12_PATH="${P12_PATH/#\~/$HOME}"
 [ -f "$P12_PATH" ] || { echo "not found: $P12_PATH"; exit 1; }
 
-read -r -s -p "Password you set on the .p12: " P12_PW; echo ""
-
 echo "── Step 2: verifying the export contains ONLY your personal identities…"
-CERT_NAMES=$("$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys -clcerts 2>/dev/null \
-  | "$OPENSSL" x509 -noout -subject 2>/dev/null; \
-  "$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys 2>/dev/null \
-  | awk '/friendlyName:/ {sub(/^ +friendlyName: /,""); print}')
+ATTEMPTS=0
+while :; do
+  read -r -s -p "Password you set on the .p12: " P12_PW; echo ""
+  ERR="$(mktemp)"
+  if "$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys >/dev/null 2>"$ERR"; then
+    rm -f "$ERR"; break
+  fi
+  echo "  ✗ could not open the .p12 — $(grep -m1 -i 'error' "$ERR" || head -1 "$ERR")"
+  rm -f "$ERR"
+  ATTEMPTS=$((ATTEMPTS + 1))
+  [ "$ATTEMPTS" -ge 3 ] && { echo "  three failed attempts — giving up."; exit 1; }
+  echo "  try again ($((3 - ATTEMPTS)) attempts left)…"
+done
 
-if [ -z "$CERT_NAMES" ]; then
-  echo "could not read the .p12 (wrong password?)"; exit 1
+FRIENDLY=$("$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys 2>/dev/null \
+  | awk '/friendlyName:/ {sub(/^ +friendlyName: /,""); print}' || true)
+
+if [ -z "$FRIENDLY" ]; then
+  echo "✗ the .p12 opened but contains no named certificates — re-export from Keychain Access."
+  exit 1
 fi
 
-echo "$CERT_NAMES" | sed 's/^/    /'
+echo "  found:"
+echo "$FRIENDLY" | sed 's/^/    /'
 
-# subject lines describe the same certs; judge on friendlyName lines only
-FRIENDLY=$(echo "$CERT_NAMES" | grep -v "^subject=" | grep -v "^$" || true)
 EXTRA=$(echo "$FRIENDLY" | grep -vF "$ALLOWED_APP" | grep -vF "$ALLOWED_INST" || true)
 
 if [ -n "$EXTRA" ]; then
