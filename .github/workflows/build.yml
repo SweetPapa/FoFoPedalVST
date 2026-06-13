@@ -11,7 +11,36 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Cheap gate: only run the heavy platform builds when code actually
+  # changed. Skipped required checks count as satisfied, so docs/site-only
+  # PRs merge fast while code PRs still need green builds on both platforms.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'Source/**'
+              - 'common/**'
+              - 'daydream/**'
+              - 'fofopedal/**'
+              - 'double/**'
+              - 'backporch/**'
+              - 'sway/**'
+              - 'ui/**'
+              - 'Resources/**'
+              - 'CMakeLists.txt'
+              - 'cmake/**'
+              - '.github/workflows/build.yml'
+
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
