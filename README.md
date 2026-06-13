@@ -64,3 +64,19 @@ All six plugins share a header-only DSP toolkit in `common/spt/`:
 Source code: Apache-2.0 (see `LICENSE`). The pedals are free to download and use in any production, commercial or not.
 
 > Note for redistributors building from source: this project uses the JUCE framework, which has its own license terms (JUCE 8 personal/commercial tiers) — see [juce.com/legal](https://juce.com/legal/juce-8-licence/).
+
+## Development workflow
+
+`main` is protected: all changes land via pull request, and both platform
+builds (macOS + Windows) must pass before merging.
+
+```bash
+git checkout -b feat/my-change   # branch
+# ...work, commit...
+git push -u origin feat/my-change
+gh pr create --fill              # open the PR
+gh pr merge --auto --squash      # merges itself when CI goes green
+```
+
+Releases are cut from main by tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+(see RELEASING.md). The site auto-deploys on any merge to main touching `site/`.
