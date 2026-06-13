@@ -108,7 +108,7 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           $env:VERSION = $env:VERSION.TrimStart('v')
-          powershell -ExecutionPolicy Bypass -File windows\build.ps1
+          & windows\build.ps1
 
       - name: Sign installer (Azure Trusted Signing)
         if: env.HAVE_AZURE_SIGNING == 'true'

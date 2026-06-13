@@ -1,4 +1,4 @@
-# build.ps1 — build all six pedals + the signed Windows installer.
+# build.ps1 - build all six pedals + the signed Windows installer.
 # Run from the repo root on a Windows machine (e.g. Infinity):
 #
 #   powershell -ExecutionPolicy Bypass -File windows\build.ps1
@@ -32,9 +32,9 @@ foreach ($d in $uiDirs) {
 }
 
 Write-Host "== 2/4 CMake build (Release x64) ==" -ForegroundColor Cyan
-# WebView2 SDK — required by the plugin UIs. JUCE looks for the NuGet package
+# WebView2 SDK - required by the plugin UIs. JUCE looks for the NuGet package
 # via JUCE_WEBVIEW2_PACKAGE_LOCATION; a .nupkg is just a zip, so fetch it
-# directly (no nuget.exe needed — works the same in CI and on a fresh machine).
+# directly (no nuget.exe needed - works the same in CI and on a fresh machine).
 $Wv2Version = "1.0.1901.177"
 $Wv2Root = Join-Path $RepoRoot "$BuildDir\webview2"
 $Wv2Pkg = Join-Path $Wv2Root "Microsoft.Web.WebView2.$Wv2Version"
@@ -70,14 +70,14 @@ foreach ($p in $Plugins) {
     if (-not (Test-Path $src)) { throw "missing artefact: $src" }
     Copy-Item -Recurse $src $Stage
     # VST3 bundles are folders; the actual binary lives inside. Signing the
-    # plugin DLL is optional but free once signing works — do it.
+    # plugin DLL is optional but free once signing works - do it.
     Get-ChildItem -Recurse "$Stage\${p}.vst3" -Filter "*.vst3" -File | ForEach-Object { Sign-File $_.FullName }
 }
 
 Write-Host "== 4/4 Building installer ==" -ForegroundColor Cyan
 $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
 if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-if (-not (Test-Path $iscc)) { throw "Inno Setup 6 not found — install from jrsoftware.org" }
+if (-not (Test-Path $iscc)) { throw "Inno Setup 6 not found - install from jrsoftware.org" }
 
 & $iscc "/DAppVersion=$Version" "/DStageDir=$Stage" "$PSScriptRoot\installer.iss"
 if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
