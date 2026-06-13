@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head><style>html,body{margin:0;padding:0;width:1024px;height:1024px;overflow:hidden}</style></head>
+<body>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="32%" r="90%">
+      <stop offset="0%" stop-color="#2a2018"/>
+      <stop offset="55%" stop-color="#1a1410"/>
+      <stop offset="100%" stop-color="#0f0b08"/>
+    </radialGradient>
+    <radialGradient id="face" cx="50%" cy="38%" r="80%">
+      <stop offset="0%" stop-color="#33281e"/>
+      <stop offset="70%" stop-color="#221a13"/>
+      <stop offset="100%" stop-color="#171109"/>
+    </radialGradient>
+    <linearGradient id="arc" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff8a3d"/>
+      <stop offset="100%" stop-color="#ffb454"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square pedal body -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect x="14" y="14" width="996" height="996" rx="210" fill="none"
+        stroke="#3a2d20" stroke-width="10"/>
+
+  <!-- knob face -->
+  <circle cx="512" cy="512" r="330" fill="url(#face)"
+          stroke="#43331f" stroke-width="14"/>
+
+  <!-- dial track + lit arc (≈ 7 o'clock to 2 o'clock) -->
+  <circle cx="512" cy="512" r="396" fill="none" stroke="#3a2d20"
+          stroke-width="40" stroke-linecap="round"
+          stroke-dasharray="1866 622" transform="rotate(135 512 512)"/>
+  <circle cx="512" cy="512" r="396" fill="none" stroke="url(#arc)"
+          stroke-width="40" stroke-linecap="round"
+          stroke-dasharray="1244 1244" transform="rotate(135 512 512)"/>
+
+  <!-- pointer at the arc's end (2 o'clock) -->
+  <g transform="rotate(45 512 512)">
+    <line x1="512" y1="512" x2="512" y2="244"
+          stroke="#ffb454" stroke-width="56" stroke-linecap="round"/>
+  </g>
+  <circle cx="512" cy="512" r="64" fill="#ff8a3d"/>
+  <circle cx="512" cy="512" r="26" fill="#1a1410"/>
+</svg>
+</body>
+</html>
