@@ -189,7 +189,7 @@ jobs:
           if [ -n "$GCP_TOKEN" ]; then
             BODY=$(jq -n --arg log "$LOG" --arg tag "$TAG" '{
               contents: [{role: "user", parts: [{text: ("Write friendly, musician-facing release notes for Sweet Papa Pedals " + $tag + " (free VST3/AU pedals for indie rock). Summarize what changed in plain language a producer cares about — sound, workflow, fixes — from these commits. Use 2-4 short sections with emoji headers. No preamble, markdown only.\n\nCommits:\n" + $log)}]}],
-              generationConfig: {maxOutputTokens: 2048}
+              generationConfig: {maxOutputTokens: 2048, thinkingConfig: {thinkingBudget: 0}}
             }')
             curl -s "https://aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/global/publishers/google/models/${VERTEX_MODEL}:generateContent" \
               -H "Authorization: Bearer $GCP_TOKEN" \
