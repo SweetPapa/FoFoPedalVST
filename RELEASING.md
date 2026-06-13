@@ -68,3 +68,11 @@ Tag = version. `v0.2.0` → installers named `SweetPapaPedals-0.2.0.pkg` /
 `SweetPapaPedals-Setup-0.2.0.exe` plus the stable-name copies the site links
 to. Keep `bundle.version` in `site/src/data/catalog.json` roughly in sync so
 the site shows the right number.
+
+## CI fast path
+
+PRs that don't touch code paths (docs, `site/`, `scripts/`) skip the heavy
+platform builds — the required checks report "skipped", which satisfies
+branch protection, and the PR merges in under a minute. Anything touching
+`Source/`, the plugin dirs, `common/`, `ui/`, or CMake gets the full
+two-platform build gate.
