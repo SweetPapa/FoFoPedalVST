@@ -53,21 +53,33 @@ P12_PATH="${P12_PATH/#\~/$HOME}"
 [ -f "$P12_PATH" ] || { echo "not found: $P12_PATH"; exit 1; }
 
 echo "── Step 2: verifying the export contains ONLY your personal identities…"
+# Keychain Access exports cert bags with the legacy RC2 cipher. System
+# LibreSSL reads that natively; OpenSSL 3 needs -legacy. Try each reader
+# until one opens the file, so the password is only blamed when it's
+# actually wrong.
+READERS=("/usr/bin/openssl pkcs12" "$OPENSSL pkcs12 -legacy" "$OPENSSL pkcs12")
+
+P12_READ=""
 ATTEMPTS=0
 while :; do
   read -r -s -p "Password you set on the .p12: " P12_PW; echo ""
-  ERR="$(mktemp)"
-  if "$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys >/dev/null 2>"$ERR"; then
-    rm -f "$ERR"; break
-  fi
-  echo "  ✗ could not open the .p12 — $(grep -m1 -i 'error' "$ERR" || head -1 "$ERR")"
-  rm -f "$ERR"
+  LAST_ERR=""
+  for CAND in "${READERS[@]}"; do
+    ERR="$(mktemp)"
+    if $CAND -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys >/dev/null 2>"$ERR"; then
+      P12_READ="$CAND"; rm -f "$ERR"; break
+    fi
+    LAST_ERR="$(grep -m1 -iE 'error|unsupported' "$ERR" || head -1 "$ERR")"
+    rm -f "$ERR"
+  done
+  [ -n "$P12_READ" ] && break
+  echo "  ✗ could not open the .p12 — $LAST_ERR"
   ATTEMPTS=$((ATTEMPTS + 1))
   [ "$ATTEMPTS" -ge 3 ] && { echo "  three failed attempts — giving up."; exit 1; }
   echo "  try again ($((3 - ATTEMPTS)) attempts left)…"
 done
 
-FRIENDLY=$("$OPENSSL" pkcs12 -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys 2>/dev/null \
+FRIENDLY=$($P12_READ -in "$P12_PATH" -passin "pass:$P12_PW" -nokeys 2>/dev/null \
   | awk '/friendlyName:/ {sub(/^ +friendlyName: /,""); print}' || true)
 
 if [ -z "$FRIENDLY" ]; then
