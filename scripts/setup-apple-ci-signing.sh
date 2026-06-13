@@ -108,7 +108,7 @@ if ! echo "$FRIENDLY" | grep -qF "$ALLOWED_APP" || ! echo "$FRIENDLY" | grep -qF
 fi
 echo "  ✓ exactly the two personal Developer ID identities — safe to upload"
 
-echo "── Step 3: setting GitHub secrets on $REPO…"
+echo "── Step 3: setting GitHub secrets on ${REPO}..."
 base64 -i "$P12_PATH"  | gh secret set APPLE_CERT_P12      -R "$REPO"
 printf '%s' "$P12_PW"  | gh secret set APPLE_CERT_PASSWORD -R "$REPO"
 printf '%s' "$TEAM_ID" | gh secret set APPLE_TEAM_ID       -R "$REPO"
