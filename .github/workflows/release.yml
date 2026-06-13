@@ -154,18 +154,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: assets, merge-multiple: true }
 
-      - name: Authenticate to Google Cloud (Vertex AI)
-        if: env.HAVE_VERTEX == 'true'
-        id: gauth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.VERTEX_SA_KEY }}
-          token_format: access_token
-
+      # Best-effort AI notes. This step is allowed to fail (continue-on-error):
+      # a flaky/denied Vertex call must NEVER block the actual release. The
+      # token is minted straight from the SA key with gcloud (JWT-assertion
+      # flow) — no IAM Credentials 'getAccessToken' permission required.
       - name: Generate release notes (Gemini + auto)
+        id: notes
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          GCP_TOKEN: ${{ steps.gauth.outputs.access_token }}
+          VERTEX_SA_KEY: ${{ secrets.VERTEX_SA_KEY }}
           TAG: ${{ github.ref_name }}
         run: |
           PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
@@ -173,11 +171,22 @@ jobs:
           LOG=$(git log --oneline --no-merges $RANGE | head -100)
 
           # GitHub's auto-generated notes as the base
+          : > auto-notes.md
           gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
             -f tag_name="$TAG" ${PREV:+-f previous_tag_name="$PREV"} \
-            --jq .body > auto-notes.md || echo "" > auto-notes.md
+            --jq .body > auto-notes.md || true
 
+          : > ai-notes.md
+          GCP_TOKEN=""
           if [ "$HAVE_VERTEX" = "true" ] && [ -n "$LOG" ]; then
+            printf '%s' "$VERTEX_SA_KEY" > "$RUNNER_TEMP/sa.json"
+            if gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" --quiet 2>/dev/null; then
+              GCP_TOKEN=$(gcloud auth print-access-token 2>/dev/null || true)
+            fi
+            rm -f "$RUNNER_TEMP/sa.json"
+          fi
+
+          if [ -n "$GCP_TOKEN" ]; then
             BODY=$(jq -n --arg log "$LOG" --arg tag "$TAG" '{
               contents: [{role: "user", parts: [{text: ("Write friendly, musician-facing release notes for Sweet Papa Pedals " + $tag + " (free VST3/AU pedals for indie rock). Summarize what changed in plain language a producer cares about — sound, workflow, fixes — from these commits. Use 2-4 short sections with emoji headers. No preamble, markdown only.\n\nCommits:\n" + $log)}]}],
               generationConfig: {maxOutputTokens: 2048}
@@ -205,7 +214,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" \
-            --title "Sweet Papa Pedals $TAG" \
-            --notes-file notes.md \
-            assets/*
+          # Publish no matter what happened above: use our notes if the step
+          # produced them, otherwise fall back to GitHub's auto-generated notes.
+          if [ -s notes.md ]; then
+            gh release create "$TAG" --title "Sweet Papa Pedals $TAG" \
+              --notes-file notes.md assets/*
+          else
+            gh release create "$TAG" --title "Sweet Papa Pedals $TAG" \
+              --generate-notes assets/*
+          fi
