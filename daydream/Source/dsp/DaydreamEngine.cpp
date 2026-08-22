@@ -3,191 +3,248 @@
 namespace daydream
 {
 
+using fofo::Lfo;
+using fofo::Drift;
+using fofo::EnvSource;
+
 void DaydreamEngine::prepare (const juce::dsp::ProcessSpec& s)
 {
-    spec = s;
+    spec = { s.sampleRate, (int) s.maximumBlockSize, (int) juce::jmax (1u, s.numChannels) };
 
-    inputHPF.clear(); inputHPF.resize (s.numChannels);
-    const auto hp = juce::dsp::IIR::Coefficients<float>::makeHighPass (s.sampleRate, 80.0f);
-    for (auto& f : inputHPF) f.coefficients = hp;
+    for (auto& f : inputHp)
+    {
+        f.prepare (spec.sampleRate);
+        f.set (fofo::Svf::Type::Highpass, 80.0f, 0.7f);
+    }
 
-    tapeSat.prepare (s);
-    drift  .prepare (s);
+    tapeSat.prepare (spec);
+    transport.prepare (spec);
+    transport.setCentreDelayMs (5.0f);
 
-    chorus.prepare (s);
-    chorus.setRate        (0.55f);
-    chorus.setDepth       (0.35f);
-    chorus.setCentreDelay (10.0f);
-    chorus.setFeedback    (0.0f);
-    chorus.setMix         (0.25f);
+    early.prepare (spec);
+    tank .prepare (spec);
 
-    reverb.prepare (s);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        // 80 ms sweep: the shimmer is feeding a reverb, where smear hides in
+        // the tail and the crossfade rate wants to stay well below the
+        // material. A short sweep would put its sidebands right in the way.
+        shimmer[ch].prepare (spec.sampleRate, 80.0f);
+        shimmer[ch].setRatio (2.0f);
+        shimHp[ch].prepare (spec.sampleRate);
+        shimHp[ch].set (fofo::Svf::Type::Highpass, 250.0f, 0.7f);
+        shimLp[ch].prepare (spec.sampleRate);
+        shimLp[ch].set (fofo::Svf::Type::Lowpass, 6500.0f, 0.6f);
+        outputLp[ch].prepare (spec.sampleRate);
+        outputLp[ch].set (fofo::Svf::Type::Lowpass, 20000.0f, 0.6f);
+    }
 
-    outputLPF.clear(); outputLPF.resize (s.numChannels);
-    lastLPFhz = 16000.0f;
-    const auto lp = juce::dsp::IIR::Coefficients<float>::makeLowPass (s.sampleRate, lastLPFhz);
-    for (auto& f : outputLPF) f.coefficients = lp;
+    mod = fofo::ModMatrix {};
+    sWow  = mod.addSource (std::make_unique<Lfo> (Lfo::Shape::Sine, 0.55f, 0x51A1u));
+    sWowR = mod.addSource (std::make_unique<Lfo> (Lfo::Shape::Sine, 0.61f, 0x52B2u));
+    sDuck = mod.addSource (std::make_unique<EnvSource> (10.0f, 350.0f));
+    static_cast<Lfo*> (mod.source (sWow ))->setRateDrift (0.30f);
+    static_cast<Lfo*> (mod.source (sWowR))->setRateDrift (0.30f);
+    static_cast<Lfo*> (mod.source (sWowR))->setStartPhase (0.27f);
 
-    dryBuffer.setSize ((int) s.numChannels, (int) s.maximumBlockSize, false, true, true);
+    const float maxWow = 0.004f * (float) spec.sampleRate;
+    dWowL = mod.addDest ("wowL", 0.0f, -maxWow, maxWow);
+    dWowR = mod.addDest ("wowR", 0.0f, -maxWow, maxWow);
+    dDuck = mod.addDest ("duck", 1.0f, 0.0f, 1.0f);
 
-    duckEnv.prepare (10.0f, 350.0f, s.sampleRate);
-    noiseSrc.prepare (1200.0f, s.sampleRate, 0xD15EA5Eu); // fast walk ≈ pinkish hiss
-    noiseLP.setCutoff (5500.0f, s.sampleRate);
+    rWowL = mod.connect (sWow,  dWowL, 0.0f);
+    rWowR = mod.connect (sWowR, dWowR, 0.0f);
+    rDuck = mod.connect (sDuck, dDuck, 0.0f);
+    mod.prepare (spec);
 
-    const double smoothMs = 0.04;
-    dryGainSmoothed.reset (s.sampleRate, smoothMs);
-    wetGainSmoothed.reset (s.sampleRate, smoothMs);
+    transport.setSampleTick ([this]
+    {
+        float key = 0.0f;
+        if (tickDryL != nullptr)
+        {
+            key = tickDryL[tickIndex];
+            if (tickDryR != nullptr) key = 0.5f * (key + tickDryR[tickIndex]);
+        }
+        mod.tick (key);
+        ++tickIndex;
+    });
+    transport.setDelayProvider ([this] (int ch) { return mod.get (ch == 0 ? dWowL : dWowR); });
 
-    updateMacros (dreamTarget);
-    dryGainSmoothed.setCurrentAndTargetValue (dryGainSmoothed.getTargetValue());
-    wetGainSmoothed.setCurrentAndTargetValue (wetGainSmoothed.getTargetValue());
+    noiseRng.seed (0xD4D2EAu);
+    noiseLp.prepare (spec.sampleRate);
+    noiseLp.set (fofo::Svf::Type::Lowpass, 7000.0f, 0.6f);
+
+    drySnap.setSize (2, spec.maxBlockSize, false, true, true);
+    wetBus .setSize (2, spec.maxBlockSize, false, true, true);
+
+    dryGainSm.reset (spec.sampleRate, 0.05);
+    wetGainSm.reset (spec.sampleRate, 0.05);
+
+    dreamSmoothed = dreamTarget;
+    updateMacros (dreamSmoothed);
+    reset();
 }
 
 void DaydreamEngine::reset()
 {
-    for (auto& f : inputHPF)  f.reset();
+    for (auto& f : inputHp) f.reset();
     tapeSat.reset();
-    drift.reset();
-    chorus.reset();
-    reverb.reset();
-    for (auto& f : outputLPF) f.reset();
-    duckEnv.reset();
+    transport.reset();
+    early.reset();
+    tank.reset();
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        shimmer[ch].reset();
+        shimHp[ch].reset();
+        shimLp[ch].reset();
+        outputLp[ch].reset();
+    }
+    shimFbL = shimFbR = 0.0f;
+    mod.reset();
+    noiseLp.reset();
+    drySnap.clear();
+    wetBus.clear();
 }
 
-void DaydreamEngine::updateMacros (float k)
+void DaydreamEngine::updateMacros (float k01)
 {
-    k = juce::jlimit (0.0f, 1.0f, k);
+    // The three stages of the journey, overlapping so nothing arrives with a
+    // hard edge.
+    const float warm  = smoothstep (0.05f, 0.40f, k01);
+    const float memory = smoothstep (0.32f, 0.70f, k01);
+    const float dream  = smoothstep (0.62f, 1.00f, k01);
 
-    // Stage 1 — warm tape. Saturation does most of the work low on the dial.
-    tapeSat.setDrive01 (juce::jmap (k, 0.0f, 1.0f, 0.04f, 0.55f));
+    // ── warm: tape ───────────────────────────────────────────────────────
+    tapeAmt = warm;
+    tapeSat.setDrive (0.10f + 0.45f * warm);
+    tapeSat.setEmphasisDb (2.0f + 3.0f * warm);
+    transport.setHeadBump (juce::jmap (warm, 90.0f, 62.0f), warm * 2.4f);
+    transport.setGapLossHz (juce::jmap (memory, 16000.0f, 7000.0f));
+    transport.setSelfErasure (0.15f + 0.35f * warm);
+    transport.setDropoutAmount (memory * 0.35f);
+    transport.setHissDb (k01 < 0.05f ? -120.0f : juce::jmap (warm, -88.0f, -74.0f));
 
-    // Stage 2 — memory. Wow arrives mid-dial, flutter a little later.
-    drift.setWowDepth01     (smoothstep (0.25f, 0.90f, k) * 0.55f);
-    drift.setFlutterDepth01 (smoothstep (0.45f, 1.00f, k) * 0.45f);
+    // ── memory: wow, width, and the room growing ─────────────────────────
+    wowMs = memory * 1.1f;
+    const float msToSamp = 0.001f * (float) spec.sampleRate;
+    mod.setRouteDepth (rWowL, wowMs * msToSamp);
+    mod.setRouteDepth (rWowR, wowMs * msToSamp * 0.88f);
 
-    chorus.setMix   (juce::jmap (smoothstep (0.20f, 0.80f, k), 0.0f, 1.0f, 0.08f, 0.38f));
-    chorus.setDepth (juce::jmap (k, 0.0f, 1.0f, 0.25f, 0.42f));
+    earlyAmt = 0.55f * smoothstep (0.05f, 0.55f, k01) * (1.0f - 0.5f * dream);
+    early.setSize01 (juce::jmap (memory, 0.20f, 0.85f));
+    early.setDampHz (juce::jmap (memory, 9000.0f, 5000.0f));
+    early.setWidth01 (0.5f + 0.5f * memory);
 
-    // Stage 3 — dream. Room → hall → near-infinite, shimmer climbs in.
-    // Caps tuned down from v2: max dial should be lush, never swamp — the
-    // dry signal stays the lead singer even at full dream.
-    reverb.setSize01    (juce::jmap (k, 0.0f, 1.0f, 0.25f, 1.00f));
-    reverb.setShimmer01 (smoothstep (0.55f, 1.00f, k) * 0.70f);
+    tank.setSize01 (juce::jmap (memory, 0.25f, 0.85f));
+    // Capped short of runaway: full dream is lush, never a swamp.
+    tank.setDecaySeconds (juce::jmap (k01, 0.5f, 14.0f));
+    tank.setLowDecayRatio (0.45f);          // the wash never piles up down low
+    tank.setHighDecayRatio (juce::jmap (dream, 0.55f, 0.85f));
+    tank.setCrossovers (250.0f, 4200.0f);
+    tank.setModDepth (4.0f + 8.0f * memory);
+    tank.setWidth01 (0.6f + 0.4f * memory);
 
-    // Ducking ramps with the dial — exactly when the wash gets big enough
-    // to need to move out of the way of the playing.
-    duckAmount = smoothstep (0.40f, 1.00f, k) * 0.65f;
+    // ── dream: shimmer, ducking, gauze ───────────────────────────────────
+    shimAmt = dream * 0.62f;                // feedback cap, per the design rule
+    duckAmt = dream * 0.55f;
+    mod.setRouteDepth (rDuck, -duckAmt);
 
-    // Noise floor texture only in the dreamy half, capped ~−72 dB.
-    noiseGain = smoothstep (0.45f, 1.00f, k) * 0.00025f;
+    noiseGain = (k01 < 0.05f) ? 0.0f : juce::Decibels::decibelsToGain (juce::jmap (warm, -90.0f, -72.0f));
 
-    // Output gauze — floor raised to 8 kHz so full dream stays airy.
-    const float toneHz = juce::jmap (smoothstep (0.55f, 1.0f, k), 0.0f, 1.0f, 16000.0f, 8000.0f);
-    if (std::abs (toneHz - lastLPFhz) > 50.0f && spec.sampleRate > 0.0)
-    {
-        lastLPFhz = toneHz;
-        const auto coefs = juce::dsp::IIR::Coefficients<float>::makeLowPass (spec.sampleRate, toneHz);
-        for (auto& f : outputLPF) f.coefficients = coefs;
-    }
+    const float lpHz = juce::jmap (dream, 20000.0f, 8000.0f);
+    for (auto& f : outputLp) f.set (fofo::Svf::Type::Lowpass, lpHz, 0.6f);
 
-    // Outer mix: dry holds up high on the dial (the ducker manages the
-    // balance dynamically), wet swells from silence with a smoothstep so the
-    // first 5% reads as bypass.
-    const float dryGain = 1.0f - smoothstep (0.60f, 1.0f, k) * 0.25f;
-    const float wetGain = smoothstep (0.02f, 1.0f, k) * 0.82f;
-    dryGainSmoothed.setTargetValue (dryGain);
-    wetGainSmoothed.setTargetValue (wetGain);
+    // Dry holds up; wet climbs. The dry floor keeps the performance present
+    // even at full dream.
+    dryGainSm.setTargetValue (juce::jmap (dream, 1.0f, 0.75f));
+    wetGainSm.setTargetValue (juce::jmap (k01, 0.0f, 0.82f));
 }
 
 void DaydreamEngine::process (juce::AudioBuffer<float>& buffer) noexcept
 {
-    const int nCh = buffer.getNumChannels();
+    const int nCh = juce::jmin (buffer.getNumChannels(), 2);
     const int nS  = buffer.getNumSamples();
+    if (nCh == 0 || nS == 0) return;
 
     {
         float peak = 0.0f;
-        for (int ch = 0; ch < nCh; ++ch)
-            peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, nS));
+        for (int ch = 0; ch < nCh; ++ch) peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, nS));
         float cur = inputPeakMax.load (std::memory_order_relaxed);
         while (peak > cur && ! inputPeakMax.compare_exchange_weak (cur, peak, std::memory_order_release, std::memory_order_relaxed)) {}
     }
 
-    updateMacros (dreamTarget);
+    // One knob, smoothed, so a sweep is a journey and not a series of steps.
+    dreamSmoothed += 0.15f * (dreamTarget - dreamSmoothed);
+    updateMacros (dreamSmoothed);
 
-    // Dry tap before any processing — bypass position stays transparent.
     for (int ch = 0; ch < nCh; ++ch)
-        dryBuffer.copyFrom (ch, 0, buffer, ch, 0, nS);
+        drySnap.copyFrom (ch, 0, buffer, ch, 0, nS);
 
-    // ── Wet chain ──────────────────────────────────────────────────────────
-    for (int ch = 0; ch < juce::jmin ((int) inputHPF.size(), nCh); ++ch)
+    // ── send: high-pass, tape saturation, then the transport ─────────────
+    for (int ch = 0; ch < nCh; ++ch)
     {
         auto* d = buffer.getWritePointer (ch);
-        for (int n = 0; n < nS; ++n)
-            d[n] = inputHPF[(size_t) ch].processSample (d[n]);
+        for (int n = 0; n < nS; ++n) d[n] = inputHp[ch].process (d[n]);
     }
 
-    tapeSat.process (buffer);
-    drift  .process (buffer);
+    tapeSat.process (buffer, nS);
 
-    {
-        juce::dsp::AudioBlock<float> blk (buffer);
-        juce::dsp::ProcessContextReplacing<float> ctx (blk);
-        chorus.process (ctx);
-    }
+    // The transport advances the matrix once per sample. The ducker keys off
+    // the DRY signal — a wash that ducks under its own tail never gets out of
+    // the way — so point the tick at the dry snapshot.
+    tickIndex = 0;
+    tickDryL = drySnap.getReadPointer (0);
+    tickDryR = nCh > 1 ? drySnap.getReadPointer (1) : nullptr;
+    transport.process (buffer, nS);
 
-    // Noise floor texture into the reverb input — faint hiss that blooms
-    // through the tail, slightly louder while you play.
-    if (noiseGain > 0.0f)
-    {
-        for (int n = 0; n < nS; ++n)
-        {
-            float mono = 0.0f;
-            for (int ch = 0; ch < nCh; ++ch) mono += dryBuffer.getReadPointer (ch)[n];
-            const float env = juce::jmin (1.0f, std::abs (mono) * 2.0f);
-            const float hiss = noiseLP.process (noiseSrc.next() * 20.0f) * noiseGain * (1.0f + 2.0f * env);
-            for (int ch = 0; ch < nCh; ++ch)
-                buffer.getWritePointer (ch)[n] += hiss;
-        }
-    }
+    // ── space, with the shimmer inside the tank's feedback ───────────────
+    auto* wl = wetBus.getWritePointer (0);
+    auto* wr = wetBus.getWritePointer (1);
 
-    reverb.process (buffer); // buffer now holds the fully-wet wash
-
-    // ── Outer mix with ducking ─────────────────────────────────────────────
     for (int n = 0; n < nS; ++n)
     {
-        const float dg = dryGainSmoothed.getNextValue();
-        const float wg = wetGainSmoothed.getNextValue();
+        const float inL = buffer.getReadPointer (0)[n];
+        const float inR = nCh > 1 ? buffer.getReadPointer (1)[n] : inL;
 
-        // Duck the wet against the dry envelope: playing pushes the wash
-        // down (up to duckAmount), silence lets it swell back.
-        float mono = 0.0f;
-        for (int ch = 0; ch < nCh; ++ch) mono += dryBuffer.getReadPointer (ch)[n];
-        const float env  = duckEnv.process (mono / (float) juce::jmax (1, nCh));
-        const float duck = 1.0f - duckAmount * juce::jmin (1.0f, env * 2.5f);
+        float noise = 0.0f;
+        if (noiseGain > 0.0f) noise = noiseLp.process (noiseRng.bipolar()) * noiseGain;
+
+        float eL = 0.0f, eR = 0.0f;
+        if (earlyAmt > 0.0f) early.process (0.5f * (inL + inR), eL, eR);
+
+        // Shimmer: an octave up, band-limited and softly clipped inside the
+        // loop so it can never build without bound.
+        const float sL = shimAmt > 0.0f ? fofo::softClipCubic (shimLp[0].process (shimHp[0].process (shimmer[0].process (shimFbL)))) : 0.0f;
+        const float sR = shimAmt > 0.0f ? fofo::softClipCubic (shimLp[1].process (shimHp[1].process (shimmer[1].process (shimFbR)))) : 0.0f;
+
+        float tL = 0.0f, tR = 0.0f;
+        tank.process (inL + eL * 0.4f + sL * shimAmt + noise,
+                      inR + eR * 0.4f + sR * shimAmt + noise, tL, tR);
+
+        shimFbL = tL;
+        shimFbR = tR;
+
+        wl[n] = tL + eL * earlyAmt;
+        wr[n] = tR + eR * earlyAmt;
+    }
+
+    // ── duck the wash under the playing, then mix ────────────────────────
+    for (int n = 0; n < nS; ++n)
+    {
+        const float duck = mod.get (dDuck);
+        const float dg = dryGainSm.getNextValue();
+        const float wg = wetGainSm.getNextValue();
 
         for (int ch = 0; ch < nCh; ++ch)
         {
-            const float dry = dryBuffer.getReadPointer (ch)[n];
-            const float wet = buffer  .getReadPointer (ch)[n];
-            buffer.getWritePointer (ch)[n] = dry * dg + wet * wg * duck;
-        }
-    }
-
-    // Output gauze + safety clip.
-    for (int ch = 0; ch < nCh; ++ch)
-    {
-        auto* d = buffer.getWritePointer (ch);
-        for (int n = 0; n < nS; ++n)
-        {
-            float v = (ch < (int) outputLPF.size()) ? outputLPF[(size_t) ch].processSample (d[n]) : d[n];
-            d[n] = spt::softClipCubic (v);
+            const float wet = outputLp[ch].process (wetBus.getReadPointer (ch)[n]) * duck;
+            buffer.getWritePointer (ch)[n] = drySnap.getReadPointer (ch)[n] * dg + wet * wg;
         }
     }
 
     {
         float peak = 0.0f;
-        for (int ch = 0; ch < nCh; ++ch)
-            peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, nS));
+        for (int ch = 0; ch < nCh; ++ch) peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, nS));
         float cur = outputPeakMax.load (std::memory_order_relaxed);
         while (peak > cur && ! outputPeakMax.compare_exchange_weak (cur, peak, std::memory_order_release, std::memory_order_relaxed)) {}
     }
