@@ -56,10 +56,9 @@ Plugins are copied to your user plug-in folders automatically after each build (
 
 ## Architecture notes
 
-**FoFoDriver** (`common/fofo/`) is the shared DSP kernel the pedals are being rebuilt onto — SWAY is the first. It exists to make a class of bug unrepresentable rather than merely fixed: a `Node` never sees dry signal, so it cannot mis-mix it; `Parallel` owns the dry snapshot, the latency compensation and the one canonical mix rule; and a single `ModMatrix` at a single control rate drives every modulation source. It provides a TPT/ZDF state variable filter with real resonance, cubic-Hermite fractional delays, a tape machine (hysteresis, head bump, gap loss, self-erasure, dropouts, hiss), and latency-reporting oversampled shapers.
+**FoFoDriver** (`common/fofo/`) is the shared DSP kernel the pedals are built on. It exists to make a class of bug unrepresentable rather than merely fixed: a `Node` never sees dry signal, so it cannot mis-mix it; `Parallel` owns the dry snapshot, the latency compensation and the one canonical mix rule; and a single `ModMatrix` at a single control rate drives every modulation source. It provides a TPT/ZDF state variable filter with real resonance, cubic-Hermite fractional delays, a delay-line pitch shifter, a tape machine (hysteresis, head bump, gap loss, self-erasure, dropouts, hiss), early reflections feeding an eight-line FDN with per-band decay, and latency-reporting oversampled shapers.
 
-The pedals not yet ported share a header-only toolkit in `common/spt/`:
-`FableVerb` (Dattorro plate/hall/room with a modulated tank), ADAA saturation primitives, tape hysteresis, a jittered dual-grain pitch shifter, and drifting LFOs.
+VROOM still uses the older header-only toolkit in `common/spt/` (`FableVerb`, ADAA primitives, tape hysteresis, a grain shifter, drifting LFOs). It was the least defective of the six and has not been ported yet.
 
 `tests/` holds the DSP test suite (`cmake --build build --target FOFO_TESTS`, then run
 `build/FOFO_TESTS_artefacts/Release/FOFO_TESTS`). It runs on every CI build and covers

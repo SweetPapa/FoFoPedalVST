@@ -12,6 +12,7 @@ int main()
     runBackporchTests();
     runDoubleTests();
     runDaydreamTests();
+    runFofopedalTests();
 
     return t::report();
 }

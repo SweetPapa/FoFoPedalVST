@@ -140,6 +140,11 @@ target_sources(DAYDREAM PRIVATE
     daydream/Source/PluginProcessor.cpp
     daydream/Source/PluginEditor.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
+    fofopedal/Source/dsp/FofoEngine.cpp
+    fofopedal/Source/dsp/Mod.cpp
+    fofopedal/Source/dsp/Pitch.cpp
+    fofopedal/Source/dsp/Delay.cpp
+    fofopedal/Source/dsp/Space.cpp
 )
 
 target_include_directories(DAYDREAM PRIVATE daydream/Source common)
@@ -344,6 +349,11 @@ target_sources(BACKPORCH PRIVATE
     backporch/Source/PluginEditor.cpp
     backporch/Source/dsp/BackporchEngine.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
+    fofopedal/Source/dsp/FofoEngine.cpp
+    fofopedal/Source/dsp/Mod.cpp
+    fofopedal/Source/dsp/Pitch.cpp
+    fofopedal/Source/dsp/Delay.cpp
+    fofopedal/Source/dsp/Space.cpp
 )
 
 target_include_directories(BACKPORCH PRIVATE backporch/Source common)
@@ -410,6 +420,11 @@ target_sources(SWAY PRIVATE
     sway/Source/dsp/SwayEngine.cpp
     backporch/Source/dsp/BackporchEngine.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
+    fofopedal/Source/dsp/FofoEngine.cpp
+    fofopedal/Source/dsp/Mod.cpp
+    fofopedal/Source/dsp/Pitch.cpp
+    fofopedal/Source/dsp/Delay.cpp
+    fofopedal/Source/dsp/Space.cpp
 )
 
 target_include_directories(SWAY PRIVATE sway/Source common)
@@ -449,6 +464,7 @@ target_sources(FOFO_TESTS PRIVATE
     tests/BackporchTests.cpp
     tests/DoubleTests.cpp
     tests/DaydreamTests.cpp
+    tests/FofopedalTests.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp
@@ -457,6 +473,11 @@ target_sources(FOFO_TESTS PRIVATE
     sway/Source/dsp/SwayEngine.cpp
     backporch/Source/dsp/BackporchEngine.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
+    fofopedal/Source/dsp/FofoEngine.cpp
+    fofopedal/Source/dsp/Mod.cpp
+    fofopedal/Source/dsp/Pitch.cpp
+    fofopedal/Source/dsp/Delay.cpp
+    fofopedal/Source/dsp/Space.cpp
 )
 
 target_include_directories(FOFO_TESTS PRIVATE common tests .)

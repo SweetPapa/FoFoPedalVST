@@ -188,13 +188,19 @@ public:
         for (int i = 0; i < kLines; ++i)
             v[i] = line[i].read (juce::jmax (2.0f, lenSamp[i] + modValue[i]));
 
-        // Per-band decay: one gain plus two shelves per line.
+        // Per-band decay: the mid-band gain, shaped by two shelving filters.
+        //
+        // The obvious construction — gm·x + (gl−gm)·lowpass(x) + (gh−gm)·
+        // highpass(x) — is wrong, and wrong in a way that is easy to miss. It
+        // sums filtered copies that carry different PHASE, so around the
+        // crossovers the terms can add constructively and the effective loop
+        // gain exceeds the value the decay time was computed from. Measured on
+        // FOFOPEDAL's Hall, that made 120 Hz ring for 2.5 s where the mids ran
+        // 1.8 s — the opposite of what was asked for. Shelving filters have a
+        // controlled magnitude at every frequency, so cascading them gives the
+        // per-band gain that was actually intended.
         for (int i = 0; i < kLines; ++i)
-        {
-            const float lo = lowShelf[i].process (v[i]);
-            const float hi = highShelf[i].process (v[i]);
-            v[i] = gainMid[i] * v[i] + gainLowRel[i] * lo + gainHighRel[i] * hi;
-        }
+            v[i] = gainMid[i] * highShelf[i].process (lowShelf[i].process (v[i]));
 
         // Hadamard mixing — three butterfly stages, unitary after 1/sqrt(8).
         hadamard8 (v);
@@ -256,13 +262,14 @@ private:
             const float gl = gFor (rt60 * lowRatio);
             const float gh = gFor (rt60 * highRatio);
 
-            // out = gm·x + (gl−gm)·lowpassed + (gh−gm)·highpassed
-            gainMid[i]     = gm;
-            gainLowRel[i]  = gl - gm;
-            gainHighRel[i] = gh - gm;
+            gainMid[i] = gm;
 
-            lowShelf[i] .set (Svf::Type::Lowpass,  loXoverHz, 0.6f);
-            highShelf[i].set (Svf::Type::Highpass, hiXoverHz, 0.6f);
+            // Shelves express each band's gain RELATIVE to the mid band, in dB.
+            const float lowDb  = 20.0f * std::log10 (juce::jmax (1.0e-6f, gl / juce::jmax (1.0e-6f, gm)));
+            const float highDb = 20.0f * std::log10 (juce::jmax (1.0e-6f, gh / juce::jmax (1.0e-6f, gm)));
+
+            lowShelf[i] .set (Svf::Type::LowShelf,  loXoverHz, 0.70710678f, lowDb);
+            highShelf[i].set (Svf::Type::HighShelf, hiXoverHz, 0.70710678f, highDb);
         }
     }
 
@@ -290,7 +297,7 @@ private:
     int       modCounter { 0 };
 
     float lenSamp[kLines] {};
-    float gainMid[kLines] {}, gainLowRel[kLines] {}, gainHighRel[kLines] {};
+    float gainMid[kLines] {};
 };
 
 } // namespace fofo

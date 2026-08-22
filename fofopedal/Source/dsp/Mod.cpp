@@ -3,209 +3,208 @@
 namespace fofopedal
 {
 
+using fofo::Lfo;
+using fofo::Drift;
+
 namespace
 {
-    constexpr float kTwoPi = 6.28318530717958647692f;
-
-    // Map 0..1 to musical LFO rates 0.05 Hz → 8 Hz, exponentially.
-    inline float mapRateHz (float r01) noexcept
-    {
-        return 0.05f * std::pow (160.0f, juce::jlimit (0.0f, 1.0f, r01));
-    }
-
-    // Tri-chorus voice constants: staggered base delays and detuned rate
-    // ratios (relative to the rate knob). The 0°/120°/240° phase offsets
-    // keep total delayed energy near-constant — dimension, not "whoosh".
-    constexpr float kVoiceBaseMs[3]  = { 5.0f, 7.0f, 9.0f };
-    constexpr float kVoiceRateMul[3] = { 1.00f, 1.18f, 1.42f };
+    constexpr float kVoiceBaseMs[3]  = { 7.0f, 10.5f, 14.0f };
+    constexpr float kVoiceRateMul[3] = { 1.00f, 1.21f, 1.43f };
     constexpr float kVoicePhase[3]   = { 0.0f, 1.0f / 3.0f, 2.0f / 3.0f };
+    constexpr float kVoicePan[3]     = { -1.0f, 0.0f, +1.0f };
+
+    inline float mapRate (float r01, float lo, float hi) noexcept
+    {
+        return lo * std::pow (hi / lo, r01);
+    }
 }
 
 void Mod::prepare (const juce::dsp::ProcessSpec& s)
 {
-    spec = s;
+    spec = { s.sampleRate, (int) s.maximumBlockSize, (int) juce::jmax (1u, s.numChannels) };
 
-    // Chorus voices — base up to 9 ms + depth swing up to ±3 ms + headroom.
-    const int maxChorusD = (int) std::ceil (0.020 * s.sampleRate);
-    for (int v = 0; v < 3; ++v)
+    mod = fofo::ModMatrix {};
+
+    const float maxSwing = 0.006f * (float) spec.sampleRate;
+    for (int v = 0; v < kVoices; ++v)
     {
-        auto& d = chorusD[v];
-        d.reset();
-        d.prepare (s);
-        d.setMaximumDelayInSamples (maxChorusD);
+        chorusLine[v].prepare (spec.sampleRate, 0.035f * (float) spec.sampleRate);
+        chorusDark[v].prepare (spec.sampleRate);
 
-        chorusLfo[v].prepare (0.6f * kVoiceRateMul[v], s.sampleRate, 0xC0FFEEu + (uint32_t) v * 7919u);
-        chorusLfo[v].resetPhase (kVoicePhase[v]);
-        chorusBBD[v].setCutoff (4500.0f, s.sampleRate);
+        sVoice[v] = mod.addSource (std::make_unique<Lfo> (Lfo::Shape::Sine, 0.5f * kVoiceRateMul[v], 0xC01u + (uint32_t) v * 7919u));
+        sDrift[v] = mod.addSource (std::make_unique<Drift> (0.19f, 0xD02u + (uint32_t) v * 104729u));
+        static_cast<Lfo*> (mod.source (sVoice[v]))->setStartPhase (kVoicePhase[v]);
+        static_cast<Lfo*> (mod.source (sVoice[v]))->setRateDrift (0.22f);
+
+        dVoice[v] = mod.addDest ("voice", 0.0f, -maxSwing, maxSwing);
+        rVoice[v] = mod.connect (sVoice[v], dVoice[v], 0.0f);
+        rDrift[v] = mod.connect (sDrift[v], dVoice[v], 0.0f);
     }
 
-    phaser.clear();
-    phaser.resize ((size_t) s.numChannels);
-    phaserLfo.prepare (0.5f, s.sampleRate, 0xBADC0DEu);
-    phaserLfo.ampDriftAmt = 0.1f;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (int st = 0; st < kStages; ++st) phaserAp[ch][st].prepare (spec.sampleRate);
+        vibLine[ch].prepare (spec.sampleRate, 0.030f * (float) spec.sampleRate);
+    }
 
-    const int maxVibD = (int) std::ceil (0.030 * s.sampleRate);
-    vibLine.reset();
-    vibLine.prepare (s);
-    vibLine.setMaximumDelayInSamples (maxVibD);
-    tremLfo.prepare (4.0f, s.sampleRate, 0x7E40D1Au);
-    tremLfo.ampDriftAmt = 0.08f;
+    sPhaser = mod.addSource (std::make_unique<Lfo> (Lfo::Shape::Sine, 0.4f, 0x9A5u));
+    static_cast<Lfo*> (mod.source (sPhaser))->setRateDrift (0.15f);
+    dPhaser = mod.addDest ("phaserHz", 800.0f, 120.0f, 6000.0f);
+    rPhaser = mod.connect (sPhaser, dPhaser, 0.0f);
 
-    dryBuffer.setSize ((int) s.numChannels, (int) s.maximumBlockSize, false, true, true);
+    sTrem = mod.addSource (std::make_unique<Lfo> (Lfo::Shape::Sine, 4.0f, 0x7B6u));
+    static_cast<Lfo*> (mod.source (sTrem))->setRateDrift (0.08f);
+    dTrem = mod.addDest ("trem", 1.0f, 0.0f, 1.0f);
+    rTrem = mod.connect (sTrem, dTrem, 0.0f);
 
+    mod.prepare (spec);
+
+    drySnap.setSize (2, spec.maxBlockSize, false, true, true);
     reset();
 }
 
 void Mod::reset()
 {
-    for (auto& d : chorusD) d.reset();
-    for (auto& p : phaser) p = PhaserChan{};
-    for (auto& b : chorusBBD) b.reset();
-    vibLine.reset();
-    for (int v = 0; v < 3; ++v) chorusLfo[v].resetPhase (kVoicePhase[v]);
+    for (auto& l : chorusLine) l.reset();
+    for (auto& f : chorusDark) f.reset();
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (auto& f : phaserAp[ch]) f.reset();
+        phaserFb[ch] = 0.0f;
+        vibLine[ch].reset();
+    }
+    mod.reset();
+    drySnap.clear();
+}
+
+void Mod::applyParams()
+{
+    const float msToSamp = 0.001f * (float) spec.sampleRate;
+
+    switch (algo)
+    {
+        case Algo::Chorus:
+        {
+            const float hz = mapRate (rate01, 0.08f, 2.5f);
+            const float swingMs = juce::jmap (depth01, 0.1f, 3.2f);
+            for (int v = 0; v < kVoices; ++v)
+            {
+                static_cast<Lfo*> (mod.source (sVoice[v]))->setRateHz (hz * kVoiceRateMul[v]);
+                mod.setRouteDepth (rVoice[v], swingMs * msToSamp);
+                mod.setRouteDepth (rDrift[v], swingMs * msToSamp * 0.30f);
+                // SHAPE darkens the voices, which is what keeps a chorus from
+                // reading as a phaser: the copies sit behind the dry.
+                chorusDark[v].set (fofo::Svf::Type::Lowpass, juce::jmap (shape01, 9000.0f, 3000.0f), 0.7f);
+            }
+            break;
+        }
+
+        case Algo::Phaser:
+        {
+            static_cast<Lfo*> (mod.source (sPhaser))->setRateHz (mapRate (rate01, 0.05f, 3.0f));
+            const float centre = juce::jmap (shape01, 350.0f, 1600.0f);
+            mod.setBase (dPhaser, centre);
+            mod.setRouteDepth (rPhaser, depth01 * centre * 0.85f);
+            break;
+        }
+
+        case Algo::TremVib:
+        case Algo::NumAlgos:
+        default:
+        {
+            static_cast<Lfo*> (mod.source (sTrem))->setRateHz (mapRate (rate01, 0.3f, 12.0f));
+            // SHAPE crossfades tremolo (amplitude) into vibrato (pitch).
+            const float tremDepth = depth01 * (1.0f - shape01) * 0.85f;
+            mod.setBase (dTrem, 1.0f - tremDepth * 0.5f);
+            mod.setRouteDepth (rTrem, tremDepth * 0.5f);
+            break;
+        }
+    }
 }
 
 void Mod::process (juce::AudioBuffer<float>& buffer) noexcept
 {
     if (bypassed || spec.sampleRate <= 0.0) return;
-
-    const int nCh = buffer.getNumChannels();
+    const int nCh = juce::jmin (buffer.getNumChannels(), 2);
     const int nS  = buffer.getNumSamples();
+    if (nCh == 0 || nS == 0) return;
 
-    // Snapshot dry for global mix.
+    applyParams();
+
     for (int ch = 0; ch < nCh; ++ch)
-        dryBuffer.copyFrom (ch, 0, buffer, ch, 0, nS);
+        drySnap.copyFrom (ch, 0, buffer, ch, 0, nS);
 
-    const float rateHz = mapRateHz (rate01);
+    const float dry = 1.0f - mix01;
+    const float msToSamp = 0.001f * (float) spec.sampleRate;
 
-    if (algo == Algo::Chorus)
+    for (int n = 0; n < nS; ++n)
     {
-        for (int v = 0; v < 3; ++v)
-            chorusLfo[v].setRateHz (rateHz * kVoiceRateMul[v], spec.sampleRate);
+        mod.tick (0.0f);
 
-        const float swingMs  = juce::jmap (depth01, 0.0f, 1.0f, 0.4f, 3.0f);
-        const float msToSamp = 0.001f * (float) spec.sampleRate;
-        const float sidePan  = juce::jlimit (0.0f, 1.0f, shape01);
+        float wl = 0.0f, wr = 0.0f;
 
-        for (int n = 0; n < nS; ++n)
+        if (algo == Algo::Chorus)
         {
-            float monoIn = 0.0f;
-            for (int ch = 0; ch < nCh; ++ch) monoIn += buffer.getReadPointer (ch)[n];
-            if (nCh > 0) monoIn /= (float) nCh;
+            float mono = 0.0f;
+            for (int ch = 0; ch < nCh; ++ch) mono += drySnap.getReadPointer (ch)[n];
+            mono /= (float) nCh;
 
-            float voice[3];
-            for (int v = 0; v < 3; ++v)
+            for (int v = 0; v < kVoices; ++v)
             {
-                const float lfo = chorusLfo[v].next();
-                const float dSamp = juce::jmax (1.0f,
-                    (kVoiceBaseMs[v] + swingMs * lfo) * msToSamp);
-
-                chorusD[v].pushSample (0, monoIn);
-                float tap = chorusD[v].popSample (0, dSamp, true);
-
-                // BBD flavour: darken + light squash per voice.
-                tap = chorusBBD[v].process (tap);
-                voice[v] = std::tanh (tap * 1.2f) * 0.85f;
+                const float d = juce::jmax (2.0f, kVoiceBaseMs[v] * msToSamp + mod.get (dVoice[v]));
+                const float tap = chorusDark[v].process (chorusLine[v].processSample (mono, d));
+                const float pan = kVoicePan[v];
+                wl += tap * std::sqrt (0.5f * (1.0f - pan));
+                wr += tap * std::sqrt (0.5f * (1.0f + pan));
             }
-
-            // L leans on voice 0, R on voice 2, both share the centre.
-            const float wetL = voice[1] * 0.5f + voice[0] * (0.5f + 0.5f * sidePan);
-            const float wetR = voice[1] * 0.5f + voice[2] * (0.5f + 0.5f * sidePan);
-
-            const float dry = 1.0f - mix01;
-            const float wet = mix01;
-
-            if (nCh >= 2)
-            {
-                buffer.getWritePointer (0)[n] = dry * dryBuffer.getReadPointer (0)[n] + wet * wetL;
-                buffer.getWritePointer (1)[n] = dry * dryBuffer.getReadPointer (1)[n] + wet * wetR;
-            }
-            else if (nCh == 1)
-            {
-                buffer.getWritePointer (0)[n] = dry * dryBuffer.getReadPointer (0)[n]
-                                              + wet * 0.5f * (wetL + wetR);
-            }
+            wl *= 0.5773503f;
+            wr *= 0.5773503f;
         }
-    }
-    else if (algo == Algo::Phaser)
-    {
-        phaserLfo.setRateHz (rateHz, spec.sampleRate);
-
-        // SHAPE picks the active stage count (4 or 6) by gating later stages.
-        const int activeStages = (shape01 < 0.5f) ? 4 : 6;
-        const float fbAmt = juce::jmap (feedback01, 0.0f, 1.0f, 0.0f, 0.85f);
-
-        for (int n = 0; n < nS; ++n)
+        else if (algo == Algo::Phaser)
         {
-            const float lfo   = juce::jlimit (-1.2f, 1.2f, phaserLfo.next());
-            const float sweep = 0.5f * (1.0f + lfo);   // ~0..1
-
-            // Exponential sweep 250 Hz → 250·16^depth — a linear sweep parks
-            // in the top octave most of the cycle; log motion dances evenly.
-            const float spanOct = 4.0f * juce::jmax (0.05f, depth01);
-            const float fcMod = 250.0f * std::pow (2.0f, spanOct * sweep);
-
-            for (int ch = 0; ch < juce::jmin (nCh, (int) phaser.size()); ++ch)
-            {
-                auto& st = phaser[(size_t) ch];
-                float x = buffer.getReadPointer (ch)[n];
-                x += st.fb * fbAmt;
-
-                float y = x;
-                for (int s = 0; s < activeStages; ++s)
-                {
-                    const float fc = juce::jmin (fcMod * (1.0f + 0.15f * (float) s),
-                                                 (float) spec.sampleRate * 0.45f);
-                    const float t  = std::tan (juce::MathConstants<float>::pi * fc / (float) spec.sampleRate);
-                    const float a  = (t - 1.0f) / (t + 1.0f);
-                    const float xn = y;
-                    const float yn = a * xn + st.ap1[s] - a * st.ap2[s];
-                    st.ap1[s] = xn;
-                    st.ap2[s] = yn;
-                    y = yn;
-                }
-                st.fb = y;
-
-                const float wet = mix01;
-                const float dry = 1.0f - mix01;
-                buffer.getWritePointer (ch)[n] = dry * dryBuffer.getReadPointer (ch)[n] + wet * y;
-            }
-        }
-    }
-    else // TremVib
-    {
-        tremLfo.setRateHz (rateHz, spec.sampleRate);
-
-        // SHAPE: 0 = pure tremolo, 1 = pure vibrato.
-        const float shape = shape01;
-        const float depthAmp = depth01 * 0.9f;
-        const float depthVibMs = juce::jmap (depth01, 0.0f, 1.0f, 0.0f, 4.0f);
-        const float centreMs = 6.0f;
-        const float msToSamp = 0.001f * (float) spec.sampleRate;
-
-        for (int n = 0; n < nS; ++n)
-        {
-            const float lfo  = juce::jlimit (-1.0f, 1.0f, tremLfo.next());
-            const float lfo01 = 0.5f * (1.0f + lfo);
-            const float tremGain = 1.0f - depthAmp * (1.0f - lfo01);
-            const float vibD = juce::jmax (1.0f, (centreMs + depthVibMs * lfo) * msToSamp);
+            const float fc = mod.get (dPhaser);
+            // Resonance rises with FEEDBACK — this is the part the old
+            // first-order stages could not do at all.
+            const float q = 0.5f + 2.5f * feedback01;
 
             for (int ch = 0; ch < nCh; ++ch)
             {
-                const float x = buffer.getReadPointer (ch)[n];
-                vibLine.pushSample (ch, x);
-                const float vib = vibLine.popSample (ch, vibD, true);
-                const float trem = x * tremGain;
-                const float wet = (1.0f - shape) * trem + shape * vib;
-
-                const float w = mix01;
-                const float dryC = 1.0f - mix01;
-                buffer.getWritePointer (ch)[n] = dryC * dryBuffer.getReadPointer (ch)[n] + w * wet;
+                float x = drySnap.getReadPointer (ch)[n] + phaserFb[ch] * feedback01 * 0.7f;
+                for (int st = 0; st < kStages; ++st)
+                {
+                    // Stagger the stages so the notches spread rather than
+                    // stacking on one frequency.
+                    phaserAp[ch][st].set (fofo::Svf::Type::Allpass,
+                                          fc * (0.72f + 0.18f * (float) st), q);
+                    x = phaserAp[ch][st].process (x);
+                }
+                phaserFb[ch] = x;
+                // A phaser is the sum of dry and the all-passed copy: the
+                // notches come from the cancellation, not from the filter.
+                (ch == 0 ? wl : wr) = 0.5f * (drySnap.getReadPointer (ch)[n] + x);
             }
         }
-    }
+        else // TremVib
+        {
+            const float g = mod.get (dTrem);
+            // SHAPE past halfway swaps amplitude modulation for pitch.
+            const float vibDepth = depth01 * shape01 * 2.0f;
+            for (int ch = 0; ch < nCh; ++ch)
+            {
+                float x = drySnap.getReadPointer (ch)[n];
+                if (vibDepth > 0.0f)
+                {
+                    const float d = juce::jmax (2.0f, (6.0f + vibDepth * (2.0f * g - 1.0f) * 3.0f) * msToSamp);
+                    x = vibLine[ch].processSample (x, d);
+                }
+                (ch == 0 ? wl : wr) = x * g;
+            }
+        }
 
-    juce::ignoreUnused (kTwoPi);
+        buffer.getWritePointer (0)[n] = drySnap.getReadPointer (0)[n] * dry + wl * mix01;
+        if (nCh > 1)
+            buffer.getWritePointer (1)[n] = drySnap.getReadPointer (1)[n] * dry + wr * mix01;
+    }
 }
 
 } // namespace fofopedal
