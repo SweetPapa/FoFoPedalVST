@@ -7,3 +7,4 @@ void runSwayTests();
 void runBackporchTests();
 void runDoubleTests();
 void runDaydreamTests();
+void runFofopedalTests();

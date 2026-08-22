@@ -5,197 +5,187 @@ namespace fofopedal
 
 void Space::prepare (const juce::dsp::ProcessSpec& s)
 {
-    spec = s;
+    spec = { s.sampleRate, (int) s.maximumBlockSize, (int) juce::jmax (1u, s.numChannels) };
 
-    preMaxSamp = juce::jmax (256, (int) std::ceil (0.300 * s.sampleRate));
-    pre.clear(); pre.resize ((size_t) s.numChannels);
-    for (auto& p : pre)
-    {
-        p.reset();
-        p.prepare (s);
-        p.setMaximumDelayInSamples (preMaxSamp);
-    }
+    for (auto& f : sendHp) f.prepare (spec.sampleRate);
+    for (auto& d : pre)    d.prepare (spec.sampleRate, 0.260f * (float) spec.sampleRate);
 
-    sendHpf.clear(); sendHpf.resize ((size_t) s.numChannels);
-
-    verb.prepare (s.sampleRate, s.maximumBlockSize);
+    early.prepare (spec);
+    tank .prepare (spec);
 
     for (int ch = 0; ch < 2; ++ch)
     {
-        shifter[ch].prepare (s.sampleRate, 80.0f, 0xF0F0u + (uint32_t) ch * 104729u);
-        shimLP[ch].setCutoff (6500.0f, s.sampleRate);
-        shimHP[ch].coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass (s.sampleRate, 250.0f);
+        // 80 ms sweep — long, because this feeds a reverb where smear hides in
+        // the tail and a short sweep would put its crossfade sidebands right
+        // in the way of the material.
+        shifter[ch].prepare (spec.sampleRate, 80.0f);
+        shifter[ch].setRatio (2.0f);
+        shimHp[ch].prepare (spec.sampleRate);
+        shimHp[ch].set (fofo::Svf::Type::Highpass, 250.0f, 0.7f);
+        shimLp[ch].prepare (spec.sampleRate);
+        shimLp[ch].set (fofo::Svf::Type::Lowpass, 6500.0f, 0.6f);
     }
-    shimmerFb.setSize (2, (int) s.maximumBlockSize, false, true, true);
-    shimmerFb.clear();
 
-    drySnap.setSize ((int) s.numChannels, (int) s.maximumBlockSize, false, true, true);
-    drySnap.clear();
+    duckMod = fofo::ModMatrix {};
+    sDuck = duckMod.addSource (std::make_unique<fofo::EnvSource> (5.0f, 380.0f));
+    dDuck = duckMod.addDest ("duck", 1.0f, 0.0f, 1.0f);
+    rDuck = duckMod.connect (sDuck, dDuck, -0.30f);   // fixed gentle duck
+    duckMod.prepare (spec);
 
-    duckEnv.prepare (5.0f, 380.0f, s.sampleRate);
+    drySnap.setSize (2, spec.maxBlockSize, false, true, true);
 
-    algoChanged = true;
-    paramsChanged = true;
+    dirty = true;
     updateAll();
+    reset();
 }
 
 void Space::reset()
 {
-    for (auto& p : pre) p.reset();
-    for (auto& f : sendHpf) f.reset();
-    verb.reset();
+    for (auto& f : sendHp) f.reset();
+    for (auto& d : pre)    d.reset();
+    early.reset();
+    tank.reset();
     for (int ch = 0; ch < 2; ++ch)
     {
         shifter[ch].reset();
-        shimLP[ch].reset();
-        shimHP[ch].reset();
+        shimHp[ch].reset();
+        shimLp[ch].reset();
+        shimFb[ch] = 0.0f;
     }
-    shimmerFb.clear();
+    duckMod.reset();
+    drySnap.clear();
 }
 
 void Space::updateAll()
 {
-    if (spec.sampleRate <= 0.0) return;
+    if (! dirty || spec.sampleRate <= 0.0) return;
+    dirty = false;
 
-    // SIZE macro per algorithm: room scale + decay + damping move together,
-    // each algo with its own curve so they stay recognisably different rooms
-    // across the whole knob.
+    for (auto& f : sendHp) f.set (fofo::Svf::Type::Highpass, sendHpHz, 0.7f);
+
+    // Each algorithm is now a different space rather than a different voicing
+    // of one tank: how much discrete early field there is, how the bands
+    // decay, and how much the tank is modulated all move together.
     switch (algo)
     {
         case Algo::Plate:
-            verb.setVoicing (spt::FableVerb::Voicing::Plate);
-            verb.setSize01  (size01);
-            verb.setDecay01 (juce::jmap (size01, 0.25f, 0.85f));
-            verb.setDamp01  (juce::jmap (size01, 0.40f, 0.20f));
-            verb.setWidth01 (0.85f);
+            // A plate has no discrete early reflections — the sheet goes
+            // dense immediately. Giving one an early field is the classic way
+            // to make it sound like a cheap room.
+            earlyGain = 0.0f;
+            tank.setSize01 (juce::jmap (size01, 0.28f, 0.70f));
+            tank.setDecaySeconds (juce::jmap (size01, 0.5f, 4.0f));
+            tank.setLowDecayRatio (0.60f);
+            tank.setHighDecayRatio (0.82f);      // bright
+            tank.setCrossovers (300.0f, 5000.0f);
+            tank.setModDepth (9.0f);
+            tank.setWidth01 (0.90f);
             break;
-        case Algo::Hall:
-            verb.setVoicing (spt::FableVerb::Voicing::Hall);
-            verb.setSize01  (size01);
-            verb.setDecay01 (juce::jmap (size01, 0.30f, 0.90f));
-            verb.setDamp01  (juce::jmap (size01, 0.55f, 0.35f));
-            verb.setWidth01 (1.0f);
-            break;
+
         case Algo::Room:
-            verb.setVoicing (spt::FableVerb::Voicing::Room);
-            verb.setSize01  (size01);
-            verb.setDecay01 (juce::jmap (size01, 0.20f, 0.75f));
-            verb.setDamp01  (0.45f);
-            verb.setWidth01 (0.75f);
+            early.setSize01 (juce::jmap (size01, 0.15f, 0.60f));
+            early.setDampHz (juce::jmap (size01, 9500.0f, 5500.0f));
+            early.setWidth01 (0.80f);
+            earlyGain = juce::jmap (size01, 0.80f, 0.55f);
+            tank.setSize01 (juce::jmap (size01, 0.18f, 0.55f));
+            tank.setDecaySeconds (juce::jmap (size01, 0.25f, 1.8f));
+            tank.setLowDecayRatio (0.50f);
+            tank.setHighDecayRatio (0.55f);
+            tank.setCrossovers (260.0f, 3800.0f);
+            tank.setModDepth (4.0f);
+            tank.setWidth01 (0.75f);
             break;
+
         case Algo::Shimmer:
-            verb.setVoicing (spt::FableVerb::Voicing::Hall);
-            verb.setSize01  (juce::jmap (size01, 0.30f, 1.00f));
-            verb.setDecay01 (juce::jmap (size01, 0.45f, 0.93f));
-            verb.setDamp01  (0.30f);
-            verb.setWidth01 (1.0f);
+            early.setSize01 (juce::jmap (size01, 0.40f, 1.00f));
+            early.setDampHz (6000.0f);
+            early.setWidth01 (1.0f);
+            earlyGain = 0.25f;
+            tank.setSize01 (juce::jmap (size01, 0.45f, 1.00f));
+            tank.setDecaySeconds (juce::jmap (size01, 2.0f, 12.0f));
+            tank.setLowDecayRatio (0.42f);       // the wash must not silt up
+            tank.setHighDecayRatio (0.80f);
+            tank.setCrossovers (250.0f, 4500.0f);
+            tank.setModDepth (11.0f);
+            tank.setWidth01 (1.0f);
             break;
+
+        case Algo::Hall:
         case Algo::NumAlgos:
-        default: break;
+        default:
+            early.setSize01 (juce::jmap (size01, 0.45f, 1.00f));
+            early.setDampHz (juce::jmap (size01, 8000.0f, 4500.0f));
+            early.setWidth01 (0.95f);
+            earlyGain = juce::jmap (size01, 0.55f, 0.35f);
+            tank.setSize01 (juce::jmap (size01, 0.40f, 0.95f));
+            tank.setDecaySeconds (juce::jmap (size01, 0.8f, 6.5f));
+            tank.setLowDecayRatio (0.55f);
+            tank.setHighDecayRatio (0.50f);      // air absorbs the top
+            tank.setCrossovers (220.0f, 3200.0f);
+            tank.setModDepth (7.0f);
+            tank.setWidth01 (1.0f);
+            break;
     }
-
-    auto c = juce::dsp::IIR::Coefficients<float>::makeHighPass (spec.sampleRate, sendHpHz);
-    for (auto& f : sendHpf) f.coefficients = c;
-
-    algoChanged = false;
-    paramsChanged = false;
 }
 
 void Space::process (juce::AudioBuffer<float>& buffer) noexcept
 {
     if (bypassed || spec.sampleRate <= 0.0) return;
-    if (algoChanged || paramsChanged) updateAll();
 
-    const int nCh = juce::jmin (buffer.getNumChannels(), (int) pre.size());
+    const int nCh = juce::jmin (buffer.getNumChannels(), 2);
     const int nS  = buffer.getNumSamples();
     if (nCh == 0 || nS == 0) return;
+
+    updateAll();
 
     for (int ch = 0; ch < nCh; ++ch)
         drySnap.copyFrom (ch, 0, buffer, ch, 0, nS);
 
-    // 1) HPF on the send + pre-delay.
-    const float preSamp = juce::jlimit (0.0f, (float) preMaxSamp - 1.0f,
+    const float preSamp = juce::jlimit (2.0f, 0.250f * (float) spec.sampleRate,
                                         preDelayMs * 0.001f * (float) spec.sampleRate);
-    for (int ch = 0; ch < nCh; ++ch)
-    {
-        auto* d = buffer.getWritePointer (ch);
-        for (int n = 0; n < nS; ++n)
-        {
-            float v = sendHpf[(size_t) ch].processSample (d[n]);
-            pre[(size_t) ch].pushSample (0, v);
-            d[n] = pre[(size_t) ch].popSample (0, preSamp, true);
-        }
-    }
-
-    // 2) Shimmer: inject the previous block's pitched tail into the input.
-    const bool shimmerOn = (algo == Algo::Shimmer && shimmer01 > 1.0e-3f);
-    if (shimmerOn)
-    {
-        const float fb = 0.62f * shimmer01;
-        for (int ch = 0; ch < juce::jmin (nCh, 2); ++ch)
-        {
-            auto* dst = buffer.getWritePointer (ch);
-            auto* fbk = shimmerFb.getReadPointer (ch);
-            for (int n = 0; n < nS; ++n)
-                dst[n] += std::tanh (fbk[n]) * fb;
-        }
-    }
-
-    // 3) Reverb, fully wet, in place.
-    auto* l = buffer.getWritePointer (0);
-    auto* r = buffer.getWritePointer (nCh > 1 ? 1 : 0);
-    verb.processBlock (l, r, l, r, nS);
-
-    // 4) Pitch-shift this block's tail for the next loop pass.
-    if (shimmerOn)
-    {
-        for (int ch = 0; ch < juce::jmin (nCh, 2); ++ch)
-        {
-            auto* src = buffer.getReadPointer (ch);
-            auto* dst = shimmerFb.getWritePointer (ch);
-            for (int n = 0; n < nS; ++n)
-            {
-                float v = shifter[ch].process (src[n], 2.0f);
-                v = shimHP[ch].processSample (v);
-                v = shimLP[ch].process (v);
-                dst[n] = v;
-            }
-        }
-    }
-    else
-    {
-        shimmerFb.clear();
-    }
-
-    // 5) Wet/dry mix (Soundtoys curve: dry holds up until wet > 70%).
-    const float mix = mix01;
-    float wetGain, dryGain;
-    if (mix <= 0.70f)
-    {
-        wetGain = mix / 0.70f;
-        dryGain = 1.0f;
-    }
-    else
-    {
-        wetGain = 1.0f;
-        dryGain = 1.0f - (mix - 0.70f) / 0.30f;
-    }
+    const float shimAmt = (algo == Algo::Shimmer) ? juce::jmin (0.62f, shimmer01 * 0.62f)
+                                                  : juce::jmin (0.35f, shimmer01 * 0.35f);
 
     for (int n = 0; n < nS; ++n)
     {
-        // Fixed 30% duck keyed by the block's input — tail hides while you
-        // play, swells back in the gaps.
-        float mono = 0.0f;
-        for (int ch = 0; ch < nCh; ++ch) mono += drySnap.getReadPointer (ch)[n];
-        const float env  = duckEnv.process (mono / (float) juce::jmax (1, nCh));
-        const float duck = 1.0f - 0.30f * juce::jmin (1.0f, env * 3.0f);
+        // Key the duck off the block input, mono-summed.
+        float key = 0.0f;
+        for (int ch = 0; ch < nCh; ++ch) key += drySnap.getReadPointer (ch)[n];
+        duckMod.tick (key / (float) nCh);
 
-        for (int ch = 0; ch < nCh; ++ch)
+        // Send: high-pass so the tail can never accumulate low end, then
+        // pre-delay so the space starts behind the transient.
+        float sL = pre[0].processSample (sendHp[0].process (drySnap.getReadPointer (0)[n]), preSamp);
+        float sR = pre[1].processSample (sendHp[1].process (nCh > 1 ? drySnap.getReadPointer (1)[n]
+                                                                   : drySnap.getReadPointer (0)[n]), preSamp);
+
+        float eL = 0.0f, eR = 0.0f;
+        if (earlyGain > 0.0f) early.process (0.5f * (sL + sR), eL, eR);
+
+        // Shimmer sits inside the tank's feedback: octave up, band-limited
+        // and soft-clipped in the loop so it cannot build without bound.
+        float shL = 0.0f, shR = 0.0f;
+        if (shimAmt > 0.0f)
         {
-            auto* w = buffer.getWritePointer (ch);
-            const float d = drySnap.getReadPointer (ch)[n];
-            w[n] = dryGain * d + wetGain * duck * w[n];
+            shL = fofo::softClipCubic (shimLp[0].process (shimHp[0].process (shifter[0].process (shimFb[0]))));
+            shR = fofo::softClipCubic (shimLp[1].process (shimHp[1].process (shifter[1].process (shimFb[1]))));
         }
+
+        float tL = 0.0f, tR = 0.0f;
+        tank.process (sL + eL * 0.4f + shL * shimAmt,
+                      sR + eR * 0.4f + shR * shimAmt, tL, tR);
+        shimFb[0] = tL;
+        shimFb[1] = tR;
+
+        const float duck = duckMod.get (dDuck);
+        const float wetL = (tL + eL * earlyGain) * duck;
+        const float wetR = (tR + eR * earlyGain) * duck;
+
+        // The block's own mix. No clipper on the sum.
+        const float dry = 1.0f - mix01;
+        buffer.getWritePointer (0)[n] = drySnap.getReadPointer (0)[n] * dry + wetL * mix01;
+        if (nCh > 1)
+            buffer.getWritePointer (1)[n] = drySnap.getReadPointer (1)[n] * dry + wetR * mix01;
     }
 }
 

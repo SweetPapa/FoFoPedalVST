@@ -1,22 +1,17 @@
 #pragma once
-#include <juce_dsp/juce_dsp.h>
+#include "fofo/Fofo.h"
+#include "fofo/Pitch.h"
 
 namespace fofopedal
 {
 
-// Pitch / Texture block. Three modes share a two-grain Hann-windowed
-// pitch-shifter substrate (lifted from DAYDREAM's OctaveUp, generalised to
-// arbitrary ratio):
+// Pitch block, v3 — rebuilt on the FoFoDriver kernel.
 //
-//   MicroDetune — ±25 cents stereo spread (L slightly sharp, R slightly flat,
-//                 amount knob = cents). The "expensive vocal" trick.
-//   OctaveHarm  — clean ±1 octave or scale-locked 3rd/5th (SHAPE picks).
-//   Freeze      — input-threshold-triggered freeze pad with crossfaded loop
-//                 boundaries and an LFO all-pass to keep the held pad alive.
-//                 Above threshold the dry passes through; below threshold a
-//                 frozen capture of the last ~1.5 s plays back.
-//
-// Output is mix-blended back with dry at the block boundary.
+// v2's three algorithms all came out of one grain shifter that read its tap
+// with linear interpolation (F8), whose moving read pointer imposes
+// amplitude-modulated high-frequency loss — the "veiled and slightly grainy"
+// quality. Micro-detune was hit hardest, because that construction cannot
+// produce a small shift at all: see fofo/Pitch.h for the arithmetic.
 class Pitch
 {
 public:
@@ -25,7 +20,7 @@ public:
     void prepare (const juce::dsp::ProcessSpec& spec);
     void reset();
 
-    void setAlgo     (Algo  a) noexcept { algo = a; }
+    void setAlgo     (Algo  a) noexcept { if (a != algo) { algo = a; dirty = true; } }
     void setAmount01 (float v) noexcept { amount01 = juce::jlimit (0.0f, 1.0f, v); }
     void setShape01  (float v) noexcept { shape01  = juce::jlimit (0.0f, 1.0f, v); }
     void setMix01    (float v) noexcept { mix01    = juce::jlimit (0.0f, 1.0f, v); }
@@ -34,41 +29,35 @@ public:
     void process (juce::AudioBuffer<float>& buffer) noexcept;
 
 private:
-    void processGrainShifter (juce::AudioBuffer<float>& buffer, float ratioL, float ratioR) noexcept;
-    void processFreeze       (juce::AudioBuffer<float>& buffer) noexcept;
+    void processShift  (juce::AudioBuffer<float>& b, int nS, float ratioL, float ratioR) noexcept;
+    void processFreeze (juce::AudioBuffer<float>& b, int nS) noexcept;
 
-    juce::dsp::ProcessSpec spec {};
+    fofo::Spec spec {};
+
     Algo  algo     { Algo::MicroDetune };
     float amount01 { 0.5f };
     float shape01  { 0.5f };
     float mix01    { 0.5f };
     bool  bypassed { false };
+    bool  dirty    { true };
 
-    // ── Two-grain pitch shifter ────────────────────────────────────────
-    struct Grain { float readPos { 0.0f }; float phase { 0.0f }; };
-    std::vector<std::array<Grain, 2>> grains;
-    juce::AudioBuffer<float> grainBuffer;
-    int  grainBufSize   { 0 };
-    int  grainSize      { 0 };
-    std::vector<int> grainWriteHead;
+    fofo::PitchShifter shifter[2];
 
-    juce::AudioBuffer<float> dryBuffer;
+    // Freeze: a captured loop with a crossfade, plus a drift so the held
+    // sound is never mechanically static.
+    juce::AudioBuffer<float> ring;
+    int   ringSize  { 0 };
+    int   writeHead { 0 };
+    bool  frozen    { false };
+    float fadeIn    { 0.0f };
+    float readPos   { 0.0f };
+    int   loopLen   { 0 }, xfade { 0 };
 
-    // ── Freeze state ───────────────────────────────────────────────────
-    juce::AudioBuffer<float> freezeRing;
-    int   freezeRingSize { 0 };
-    std::vector<int> freezeWriteHead;
-    float envFollow     { 0.0f };
-    float envAtk        { 0.0f };
-    float envRel        { 0.0f };
-    bool  frozen        { false };
-    float frozenFadeIn  { 0.0f };   // 0..1 ramp when entering frozen state
-    int   loopStart     { 0 };
-    int   loopEnd       { 0 };
-    int   loopXfade     { 0 };
-    float freezeReadPos { 0.0f };
-    float allpassState  { 0.0f };
-    float allpassLfoPhase { 0.0f };
+    fofo::ModMatrix           mod;
+    fofo::ModMatrix::SourceId sEnv {}, sDrift {};
+    fofo::ModMatrix::DestId   dEnv {}, dDrift {};
+
+    juce::AudioBuffer<float> drySnap;
 };
 
 } // namespace fofopedal

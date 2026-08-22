@@ -1,30 +1,23 @@
 #pragma once
-#include <juce_dsp/juce_dsp.h>
-#include "spt/FableVerb.h"
-#include "spt/GrainShifter.h"
-#include "spt/Shapers.h"
+#include "fofo/Fofo.h"
+#include "fofo/Pitch.h"
 
 namespace fofopedal
 {
 
-// Space (reverb) block, v2 — built on spt::FableVerb (Dattorro figure-8
-// tank with modulated allpasses) instead of juce::Reverb, so the four
-// algorithms are genuinely different rooms, not four damping presets:
+// Space block, v3 — rebuilt on the FoFoDriver kernel.
 //
-//   Plate   — fast diffusion, dense from the first millisecond, bright.
-//   Hall    — long lines, slower build, darker damping, wide.
-//   Room    — short tank, "you're in the studio" ambience.
-//   Shimmer — Hall + granular +1-oct shifter in the feedback loop
-//             (HP 250 / LP 6.5k / tanh inside the loop, capped — blooms
-//             and holds instead of exploding).
+// v2 was a Dattorro tank and nothing else, so every algorithm made a *tail*
+// rather than a *place*, and a single damping lowpass meant low end could only
+// pile up. The shimmer came from the grain shifter that read with linear
+// interpolation, and its "Freeze" cousin from the same file (F8, F11).
 //
-// All algorithms get pre-delay (0–250 ms) and a high-pass on the send —
-// the dry signal owns the low end. The tail is also gently ducked against
-// the block's input (fixed 30%): it gets out of the way while you play and
-// breathes back in the gaps. Baked in, not exposed — mix hygiene is the
-// product, not a feature.
-//
-// SIZE is a macro: tank length, decay and damping move together per-algo.
+// Now: early reflections in front of an eight-line FDN with per-band decay, so
+// the algorithms are genuinely different spaces and the lows can be made to
+// die sooner than the mids. Shimmer uses fofo::PitchShifter inside the tank's
+// feedback, band-limited and soft-clipped in the loop, with feedback capped at
+// 0.62 — a pitch shifter in a feedback path is the classic way to build an
+// oscillator by accident.
 class Space
 {
 public:
@@ -33,11 +26,11 @@ public:
     void prepare (const juce::dsp::ProcessSpec& spec);
     void reset();
 
-    void setAlgo        (Algo  a) noexcept { algo = a; algoChanged = true; }
-    void setSize01      (float v) noexcept { size01 = juce::jlimit (0.0f, 1.0f, v); paramsChanged = true; }
+    void setAlgo        (Algo  a) noexcept { if (a != algo) { algo = a; dirty = true; } }
+    void setSize01      (float v) noexcept { size01 = juce::jlimit (0.0f, 1.0f, v); dirty = true; }
     void setMix01       (float v) noexcept { mix01  = juce::jlimit (0.0f, 1.0f, v); }
     void setPreDelayMs  (float ms) noexcept { preDelayMs = juce::jlimit (0.0f, 250.0f, ms); }
-    void setSendHpHz    (float hz) noexcept { sendHpHz = juce::jlimit (40.0f, 400.0f, hz); paramsChanged = true; }
+    void setSendHpHz    (float hz) noexcept { sendHpHz = juce::jlimit (40.0f, 400.0f, hz); dirty = true; }
     void setShimmer01   (float v) noexcept { shimmer01 = juce::jlimit (0.0f, 1.0f, v); }
     void setBypassed    (bool  b) noexcept { bypassed = b; }
 
@@ -46,7 +39,8 @@ public:
 private:
     void updateAll();
 
-    juce::dsp::ProcessSpec spec {};
+    fofo::Spec spec {};
+
     Algo  algo        { Algo::Hall };
     float size01      { 0.50f };
     float mix01       { 0.30f };
@@ -54,25 +48,26 @@ private:
     float sendHpHz    { 90.0f };
     float shimmer01   { 0.0f };
     bool  bypassed    { false };
-    bool  algoChanged { true };
-    bool  paramsChanged { true };
+    bool  dirty       { true };
 
-    std::vector<juce::dsp::DelayLine<float,
-        juce::dsp::DelayLineInterpolationTypes::Lagrange3rd>> pre;
-    int    preMaxSamp { 0 };
-    std::vector<juce::dsp::IIR::Filter<float>> sendHpf;
+    fofo::Svf       sendHp[2];
+    fofo::DelayLine pre[2];
+
+    fofo::EarlyReflections early;
+    float                  earlyGain { 0.0f };
+    fofo::Fdn8             tank;
+
+    fofo::PitchShifter shifter[2];
+    fofo::Svf          shimHp[2], shimLp[2];
+    float              shimFb[2] { 0.0f, 0.0f };
+
+    // Ducking keyed by the block input, mono-summed so both sides move as one.
+    fofo::ModMatrix           duckMod;
+    fofo::ModMatrix::SourceId sDuck {};
+    fofo::ModMatrix::DestId   dDuck {};
+    int                       rDuck {};
 
     juce::AudioBuffer<float> drySnap;
-
-    spt::FableVerb verb;
-
-    spt::EnvFollower duckEnv; // keyed by block input; fixed gentle duck
-
-    // Shimmer loop: previous block's tail, pitched +1 octave.
-    spt::GrainShifter shifter[2];
-    spt::OnePoleLP    shimLP[2];
-    juce::dsp::IIR::Filter<float> shimHP[2];
-    juce::AudioBuffer<float> shimmerFb;
 };
 
 } // namespace fofopedal
