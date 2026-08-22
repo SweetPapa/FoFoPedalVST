@@ -9,6 +9,7 @@ int main()
     runKernelTests();
     runPedalRegressionTests();
     runSwayTests();
+    runBackporchTests();
 
     return t::report();
 }

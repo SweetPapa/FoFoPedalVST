@@ -8,6 +8,9 @@
 //   Mod.h         modulation sources, sparse routing matrix, destinations
 //   Node.h        Node / Chain / Parallel / MixRule
 //   Oversampler.h latency-reporting oversampled shaper node
+//   Saturation.h  ADAA tanh, tape hysteresis, output clip
+//   Space.h       early reflections, 8-line FDN with per-band decay
+//   Tape.h        record head, transport, replay head
 //
 // See Spec.h for why the kernel is shaped this way.
 
@@ -17,3 +20,6 @@
 #include "Mod.h"
 #include "Node.h"
 #include "Oversampler.h"
+#include "Saturation.h"
+#include "Space.h"
+#include "Tape.h"
