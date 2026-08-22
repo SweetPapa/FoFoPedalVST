@@ -62,6 +62,7 @@ private:
     spt::DriftWalk levelDrift[kVoices];
     juce::SmoothedValue<float> ratioSm[kVoices];
     juce::SmoothedValue<float> gainSm[kVoices];
+    juce::SmoothedValue<float> busNormSm;   // continuous 1/sqrt(effective voices)
 
     // Wet-bus voicing per mode.
     juce::dsp::IIR::Filter<float> wetHP[2], wetLP[2], wetDip[2];

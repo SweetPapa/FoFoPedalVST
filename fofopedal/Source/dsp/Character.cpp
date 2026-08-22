@@ -6,7 +6,7 @@ namespace fofopedal
 void Character::prepare (const juce::dsp::ProcessSpec& s)
 {
     spec = s;
-    envState.assign ((size_t) s.numChannels, 0.0f);
+    keyEnv = 0.0f;
 
     const auto coefFromMs = [&] (float ms)
     {
@@ -27,7 +27,7 @@ void Character::prepare (const juce::dsp::ProcessSpec& s)
 
 void Character::reset()
 {
-    std::fill (envState.begin(), envState.end(), 0.0f);
+    keyEnv = 0.0f;
     for (auto& f : lowCut)   f.reset();
     for (auto& f : tiltLow)  f.reset();
     for (auto& f : tiltHigh) f.reset();
@@ -105,55 +105,63 @@ void Character::process (juce::AudioBuffer<float>& buffer) noexcept
 {
     if (defeated) return;
 
-    const int nCh = juce::jmin (buffer.getNumChannels(), (int) envState.size());
+    const int nCh = juce::jmin (buffer.getNumChannels(), (int) lowCut.size());
     const int nS  = buffer.getNumSamples();
+    if (nCh == 0 || nS == 0) return;
 
     const float kneeHalf = kneeWidth * 0.5f;
     const float threshDb = juce::Decibels::gainToDecibels (threshLin + 1.0e-9f);
 
-    for (int ch = 0; ch < nCh; ++ch)
+    // Sample-outer so both channels share one detector and one gain value.
+    for (int n = 0; n < nS; ++n)
     {
-        auto* x = buffer.getWritePointer (ch);
-        float env = envState[(size_t) ch];
-
-        for (int n = 0; n < nS; ++n)
+        // ── low cut, and build the linked key from the loudest channel ─────
+        float key = 0.0f;
+        for (int ch = 0; ch < nCh; ++ch)
         {
-            float in = x[n];
+            auto* x = buffer.getWritePointer (ch);
+            const float v = lowCut[(size_t) ch].processSample (x[n]);
+            x[n] = v;
+            key = juce::jmax (key, std::abs (v));
+        }
 
-            in = lowCut[(size_t) ch].processSample (in);
+        // ── one envelope ───────────────────────────────────────────────────
+        float coef;
+        if (key > keyEnv)
+        {
+            coef = ampAtk;
+        }
+        else
+        {
+            // Program-dependent release: bigger envelope → slower release
+            // (sustained tones don't pump); small envelope → faster release
+            // (transients recover quickly).
+            const float vel = juce::jlimit (0.0f, 1.0f, keyEnv * 4.0f);
+            coef = ampRelFast + (ampRelSlow - ampRelFast) * vel;
+        }
+        keyEnv = coef * keyEnv + (1.0f - coef) * key;
 
-            const float absIn = std::abs (in);
-            float coef;
-            if (absIn > env)
-            {
-                coef = ampAtk;
-            }
-            else
-            {
-                // Program-dependent release: bigger envelope → slower release
-                // (sustained tones don't pump); small envelope → faster release
-                // (transients recover quickly).
-                const float vel = juce::jlimit (0.0f, 1.0f, env * 4.0f);
-                coef = ampRelFast + (ampRelSlow - ampRelFast) * vel;
-            }
-            env = coef * env + (1.0f - coef) * absIn;
+        const float envDb = juce::Decibels::gainToDecibels (keyEnv + 1.0e-9f);
+        const float over  = envDb - threshDb;
 
-            const float envDb = juce::Decibels::gainToDecibels (env + 1.0e-9f);
-            const float over  = envDb - threshDb;
+        float reductionDb = 0.0f;
+        if (over >= kneeHalf)
+        {
+            reductionDb = (ratioInv - 1.0f) * over;
+        }
+        else if (over > -kneeHalf)
+        {
+            const float kneeIn = over + kneeHalf;            // 0..W
+            reductionDb = (ratioInv - 1.0f) * kneeIn * kneeIn / (2.0f * kneeWidth);
+        }
 
-            float reductionDb = 0.0f;
-            if (over >= kneeHalf)
-            {
-                reductionDb = (ratioInv - 1.0f) * over;
-            }
-            else if (over > -kneeHalf)
-            {
-                const float kneeIn = over + kneeHalf;            // 0..W
-                reductionDb = (ratioInv - 1.0f) * kneeIn * kneeIn / (2.0f * kneeWidth);
-            }
+        const float gainLin = juce::Decibels::decibelsToGain (reductionDb) * makeupGain;
 
-            const float gainLin = juce::Decibels::decibelsToGain (reductionDb) * makeupGain;
-            in *= gainLin;
+        // ── one gain applied to every channel, then the per-channel voicing ─
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            auto* x = buffer.getWritePointer (ch);
+            float in = x[n] * gainLin;
 
             in = tiltLow  [(size_t) ch].processSample (in);
             in = tiltHigh [(size_t) ch].processSample (in);
@@ -162,8 +170,6 @@ void Character::process (juce::AudioBuffer<float>& buffer) noexcept
 
             x[n] = in;
         }
-
-        envState[(size_t) ch] = env;
     }
 }
 

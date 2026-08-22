@@ -39,6 +39,9 @@ void DoubleEngine::prepare (const juce::dsp::ProcessSpec& s)
         gainSm[v].setCurrentAndTargetValue (0.0f);
     }
 
+    busNormSm.reset (s.sampleRate, 0.05);
+    busNormSm.setCurrentAndTargetValue (1.0f / std::sqrt (2.0f));
+
     wetBus .setSize (2, (int) s.maximumBlockSize, false, true, true);
     monoSrc.setSize (1, (int) s.maximumBlockSize, false, true, true);
 
@@ -117,43 +120,55 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
     const float baseMs   = (mode == Mode::Vox ? 18.0f : mode == Mode::Strings ? 24.0f : 14.0f);
     const float msToSamp = 0.001f * (float) spec.sampleRate;
 
-    int activeVoices = 2;
-    if (pair2In > 0.01f) activeVoices = 4;
-    const float busNorm = 1.0f / std::sqrt ((float) activeVoices);
+    // Voice count fades continuously rather than flipping 2→4 at thick01 0.5 —
+    // the old integer count made busNorm jump 0.707→0.5 at a block boundary,
+    // which is an audible step (and a click when THICK is automated).
+    const float effVoices = 2.0f + 2.0f * pair2In;
+    busNormSm.setTargetValue (1.0f / std::sqrt (effVoices));
 
-    float voiceGainTgt[kVoices], voiceRatioTgt[kVoices];
+    // Base (drift-free) targets. The wander itself is applied per-sample
+    // below — DriftWalk's one-pole coefficient is computed from the sample
+    // rate, so ticking it once per block divided its effective corner by the
+    // block size and froze it into a static per-voice offset.
     for (int v = 0; v < kVoices; ++v)
     {
-        const float driftCents = pitchDrift[v].next() * 4.0f * human01 * 60.0f; // walk output is small; ×60 → ±~4 cents
-        const float cents = detCents * kVoiceDetuneMul[v] + driftCents;
-        voiceRatioTgt[v] = std::pow (2.0f, cents / 1200.0f);
-
-        const float lvlWob = 1.0f + levelDrift[v].next() * 10.0f * human01 * 0.18f;
-        voiceGainTgt[v] = (v < 2 ? 1.0f : pair2In) * juce::jlimit (0.7f, 1.3f, lvlWob);
-
-        ratioSm[v].setTargetValue (voiceRatioTgt[v]);
-        gainSm[v].setTargetValue (voiceGainTgt[v]);
+        ratioSm[v].setTargetValue (std::pow (2.0f, (detCents * kVoiceDetuneMul[v]) / 1200.0f));
+        gainSm [v].setTargetValue (v < 2 ? 1.0f : pair2In);
     }
 
     // ── render voices into the wet bus ─────────────────────────────────────
-    wetBus.clear();
     auto* wl = wetBus.getWritePointer (0);
     auto* wr = wetBus.getWritePointer (1);
     const auto* src = monoSrc.getReadPointer (0);
 
+    // 2^(c/1200) ≈ 1 + c·ln2/1200 — exact to well under 0.01% over the few
+    // cents the drift covers, and saves a pow() per voice per sample.
+    constexpr float kCentsToRatio = 0.0005776227f;
+
     for (int n = 0; n < nS; ++n)
     {
+        const float bn = busNormSm.getNextValue();
+        float accL = 0.0f, accR = 0.0f;
+
         for (int v = 0; v < kVoices; ++v)
         {
-            const float g = gainSm[v].getNextValue();
-            const float ratio = ratioSm[v].getNextValue();
+            // Tick every walk before the early-out so all three stay
+            // free-running at the same rate whatever the voice is doing.
+            const float driftCents = juce::jlimit (-12.0f, 12.0f,
+                                        pitchDrift[v].next() * 240.0f * human01);
+            const float lvlWob   = juce::jlimit (0.7f, 1.3f,
+                                        1.0f + levelDrift[v].next() * 1.8f * human01);
+            const float wanderMs = timeDrift[v].next() * 10.0f * human01 * 8.0f;
+
+            const float g     = gainSm[v].getNextValue() * lvlWob;
+            const float ratio = ratioSm[v].getNextValue() * (1.0f + driftCents * kCentsToRatio);
+
             if (g < 0.001f) { shifter[v].process (src[n], ratio); continue; } // keep state warm
 
             // pitch
             float tap = shifter[v].process (src[n], ratio);
 
             // timing: base offset + slow wander (±8 ms at full HUMAN)
-            const float wanderMs = timeDrift[v].next() * 10.0f * human01 * 8.0f;
             const float dSamp = juce::jmax (1.0f, (baseMs + kVoiceOffsetMs[v] + wanderMs) * msToSamp);
             voiceDelay[v].pushSample (0, tap);
             tap = voiceDelay[v].popSample (0, dSamp, true);
@@ -162,11 +177,12 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
 
             // constant-power-ish pan, folded toward centre by (1-WIDE)
             const float pan = kVoicePan[v] * wide01; // -1..1
-            const float gl = std::sqrt (0.5f * (1.0f - pan));
-            const float gr = std::sqrt (0.5f * (1.0f + pan));
-            wl[n] += tap * gl;
-            wr[n] += tap * gr;
+            accL += tap * std::sqrt (0.5f * (1.0f - pan));
+            accR += tap * std::sqrt (0.5f * (1.0f + pan));
         }
+
+        wl[n] = accL * bn;
+        wr[n] = accR * bn;
     }
 
     // ── wet-bus voicing (mode EQ + always-on HPF) ──────────────────────────
@@ -179,7 +195,7 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
             x = wetHP [ch].processSample (x);
             x = wetDip[ch].processSample (x);
             x = wetLP [ch].processSample (x);
-            w[n] = x * busNorm;
+            w[n] = x;
         }
     }
 
@@ -193,7 +209,11 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         for (int n = 0; n < nS; ++n)
         {
             const float wet = (nCh == 1) ? 0.5f * (w[n] + wOther[n]) : w[n];
-            d[n] = spt::softClipCubic (d[n] + wet * wetGain);
+            // No output clipper here: this is an additive doubler and the dry
+            // path has to stay pristine. A cubic clip on the sum imposed a
+            // hard ±1.0 ceiling and added 3rd-harmonic distortion (plus
+            // aliasing — it ran at base rate) to the dry signal on hot input.
+            d[n] = d[n] + wet * wetGain;
         }
     }
 
