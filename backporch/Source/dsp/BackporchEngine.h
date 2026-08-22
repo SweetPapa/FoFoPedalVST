@@ -1,26 +1,42 @@
 #pragma once
-#include <juce_dsp/juce_dsp.h>
-#include "spt/FableVerb.h"
-#include "spt/Shapers.h"
+#include "fofo/Fofo.h"
+#include <atomic>
 
 namespace bkpr
 {
 
+// ─────────────────────────────────────────────────────────────────────────────
 // BACKPORCH — "Sounds produced, not wet."
 //
-// A short, dark production space where the mix-hygiene is the identity, not
-// a feature panel: the send is high-passed at 150 Hz (always), the tail is
-// pre-delayed so it sits BEHIND the source, and a ducker keyed by the dry
-// signal pushes the tail down while you play and lets it breathe back in
-// the gaps. You should be able to put this on a lead vocal at MIX 50% and
-// never worry about it.
+// Rebuilt on the FoFoDriver kernel. v1 was the strongest of the six — the
+// ducking and the mix curve were already right — but it had one structural
+// gap and one inherited defect:
 //
-//   SPACE — size + decay macro (per mode)
-//   TONE  — dark ↔ bright tilt of the tail only
-//   DUCK  — how much the tail hides while you play (default 35%)
-//   MIX   — Soundtoys curve: dry holds at unity until 70%
+//   • No early reflections. It ran a Dattorro tank and nothing else, so it
+//     made a *tail* rather than a *place*. The first ~50 ms of a real room is
+//     a handful of discrete reflections off nearby surfaces, and that pattern
+//     is most of what tells a listener how big the space is. This was the
+//     cheapest large improvement left in the catalogue.
+//   • A cubic soft clip sat on the dry+wet sum at base rate (F9), adding
+//     third-harmonic distortion and aliasing to the dry path on hot sources.
 //
-// Modes: SLAP (one dark echo + a cup of room) / ROOM / PLATE.
+// v2 is early reflections into an eight-line FDN with per-band decay. The
+// per-band part is what the identity depends on: a single damping lowpass —
+// all v1 had — can make highs die sooner but cannot stop low end piling up,
+// and low end piling up is exactly what makes a reverb swamp a track. Now the
+// lows die faster than the mids by default, which is what "produced, not wet"
+// actually means in DSP terms.
+//
+// Controls are unchanged, so the UI and every saved preset still apply:
+//
+//   SPACE — size and decay together
+//   TONE  — tilt of the tail, dark to bright
+//   DUCK  — how far the tail gets out of the way while you play
+//   MIX   — Soundtoys curve: wet reaches unity at 70%, then dry comes down
+//
+// Modes: SLAP (one dark repeat plus a hint of room) / ROOM (early field
+// forward, short tail) / PLATE (no discrete early field, dense bright tail).
+// ─────────────────────────────────────────────────────────────────────────────
 class BackporchEngine
 {
 public:
@@ -43,33 +59,42 @@ public:
     float fetchOutputPeak() noexcept { return outputPeak.exchange (0.0f); }
 
 private:
-    juce::dsp::ProcessSpec spec {};
+    void applyParams();
+
+    fofo::Spec spec {};
 
     Mode  mode    { Mode::Room };
     float space01 { 0.45f };
-    float tone01  { 0.45f };
+    float tone01  { 0.50f };
     float duck01  { 0.35f };
-    float mix01   { 0.40f };
+    float mix01   { 0.35f };
 
-    // Send conditioning (identity, not options).
-    juce::dsp::IIR::Filter<float> sendHP[2];
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> preDelay[2];
-    int preMaxSamp { 0 };
+    // Send conditioning: the wet path is high-passed before it ever reaches
+    // the tank, so low end never gets a chance to accumulate in the tail.
+    fofo::Svf       sendHp[2];
+    fofo::DelayLine preDelay[2];
+    float           preSamp { 1.0f };
 
-    spt::FableVerb verb;
+    fofo::EarlyReflections early;
+    float                  earlyGain { 0.6f };
 
-    // Slap voice: one dark echo feeding (and beside) the small room.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> slapLine[2];
-    juce::dsp::IIR::Filter<float> slapLP[2];
-    int slapMaxSamp { 0 };
-    juce::SmoothedValue<float> slapTimeSm;
+    fofo::Fdn8 tank;
+    float      tankGain { 1.0f };
 
-    spt::TiltEQ tailTilt[2];
-    spt::EnvFollower duckEnv;
+    // Slap: one dark discrete repeat, which IS the effect in that mode.
+    fofo::DelayLine slapLine[2];
+    fofo::Svf       slapDark[2];
+    float           slapSamp { 4800.0f }, slapFeedback { 0.0f }, slapGain { 0.0f };
 
-    juce::AudioBuffer<float> drySnap;
-    juce::AudioBuffer<float> wet;
-    juce::AudioBuffer<float> verbScratch; // slap mode: room rendered beside the echo
+    fofo::Svf tailTiltLow[2], tailTiltHigh[2];
+
+    // Ducking, keyed by the mono-summed dry so both channels move together.
+    fofo::ModMatrix           duckMod;
+    fofo::ModMatrix::SourceId sDuckEnv {};
+    fofo::ModMatrix::DestId   dDuck {};
+    int                       rDuck {};
+
+    juce::AudioBuffer<float> drySnap, wet;
 
     std::atomic<float> inputPeak  { 0.0f };
     std::atomic<float> outputPeak { 0.0f };

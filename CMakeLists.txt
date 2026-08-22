@@ -410,6 +410,7 @@ target_sources(SWAY PRIVATE
     sway/Source/PluginProcessor.cpp
     sway/Source/PluginEditor.cpp
     sway/Source/dsp/SwayEngine.cpp
+    backporch/Source/dsp/BackporchEngine.cpp
 )
 
 target_include_directories(SWAY PRIVATE sway/Source common)
@@ -446,12 +447,14 @@ target_sources(FOFO_TESTS PRIVATE
     tests/KernelTests.cpp
     tests/PedalRegressionTests.cpp
     tests/SwayTests.cpp
+    tests/BackporchTests.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp
     fofopedal/Source/dsp/OutputGlue.cpp
     fofopedal/Source/dsp/Drive.cpp
     sway/Source/dsp/SwayEngine.cpp
+    backporch/Source/dsp/BackporchEngine.cpp
 )
 
 target_include_directories(FOFO_TESTS PRIVATE common tests .)

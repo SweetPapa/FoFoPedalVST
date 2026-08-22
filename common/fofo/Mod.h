@@ -211,6 +211,11 @@ public:
         }
     }
 
+    // For array members, which cannot be constructed with arguments. Call
+    // before prepare(); two drifts sharing a seed walk in lockstep, which
+    // defeats the point of having more than one.
+    void setSeed (uint32_t s) noexcept { seedValue = s; rng.seed (s); }
+
     float tick() noexcept override
     {
         if (cr <= 0.0) return 0.0f;
