@@ -341,11 +341,21 @@ public:
         return (DestId) (dests.size() - 1);
     }
 
-    void connect (SourceId src, DestId dst, float depth, Curve curve = Curve::Linear)
+    // Returns a route id. Wire routes once at prepare() time and change their
+    // depth with setRouteDepth() from then on — rebuilding the route list every
+    // block would touch the heap on the audio thread.
+    int connect (SourceId src, DestId dst, float depth, Curve curve = Curve::Linear)
     {
-        if (src < 0 || src >= (int) sources.size()) return;
-        if (dst < 0 || dst >= (int) dests.size())   return;
+        if (src < 0 || src >= (int) sources.size()) return -1;
+        if (dst < 0 || dst >= (int) dests.size())   return -1;
         routes.push_back ({ src, dst, depth, curve });
+        return (int) routes.size() - 1;
+    }
+
+    void setRouteDepth (int routeId, float depth) noexcept
+    {
+        if (routeId >= 0 && routeId < (int) routes.size())
+            routes[(size_t) routeId].depth = depth;
     }
 
     void clearRoutes() { routes.clear(); }
