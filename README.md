@@ -29,7 +29,7 @@ Run **`SweetPapaPedals-Setup.exe`** — installs the VST3s to `C:\Program Files\
 
 - **DOUBLE** — THICK = how many voices/how detuned · WIDE = stereo spread (mono-safe) · HUMAN = how much the takes wander · MIX = layer the doubles under the dry. Modes voice it for **Vox / Strings / Synth**. Start: vocal, all knobs at default, MIX to taste.
 - **BACKPORCH** — SPACE = size+decay · TONE = darker/brighter tail · DUCK = how much the tail hides while you play · MIX (dry holds at unity until 70%). Modes: **Slap / Room / Plate**. Start: Room, defaults, on a lead vocal.
-- **SWAY** — MOVE = total movement · RATE = speed · COLOR = flavor per mode (wow↔flutter / spread / trem shape) · MIX. Modes: **Tape / Ensemble / Pump**. Start: Tape mode on keys, MOVE at noon.
+- **SWAY** — MOVE = total movement · RATE = speed · COLOR = flavour per mode (**Tape**: machine condition, from serviced deck to dying cassette · **Ensemble**: width · **Pump**: shape) · MIX = how much pedal. Modes: **Tape / Ensemble / Pump**. Tape is a real machine — saturation, head bump, gap loss, dropouts and hiss, not just a wobble. Start: Tape mode on keys, MOVE at noon.
 - **VROOM** — Four hero knobs: DRIVE / CHARACTER / TONE / LEVEL, four voices (**Smooth / Crunch / Fuzz / Octave**), source modes (**Electric / Acoustic / Bass**). DRIVE is loudness-compensated — it changes *texture*, not volume. The support row (Input/Body/Sag/Blend) is there when you want it; SAG makes the clipper respond to your picking.
 - **DAYDREAM** — One knob. 0–35% warm tape, 35–65% wobble and width, 65–100% shimmering near-infinite wash that ducks under your playing. That's the manual.
 - **FOFOPEDAL** — Pick one of 12 named characters (each is ONE vibe: *Front Porch* is a hall, *Dub Lounge* is a ping-pong tape echo, *Cassette Sunday* is a warbly cassette…). **MIX is "how much pedal"** — it scales the whole character, 0 = clean. The six block knobs are there for deeper tweaks.
@@ -56,8 +56,15 @@ Plugins are copied to your user plug-in folders automatically after each build (
 
 ## Architecture notes
 
-All six plugins share a header-only DSP toolkit in `common/spt/`:
-`FableVerb` (Dattorro plate/hall/room with a modulated tank), ADAA saturation primitives, tape hysteresis, a jittered dual-grain pitch shifter, and drifting LFOs (nothing in these pedals sits perfectly still).
+**FoFoDriver** (`common/fofo/`) is the shared DSP kernel the pedals are being rebuilt onto — SWAY is the first. It exists to make a class of bug unrepresentable rather than merely fixed: a `Node` never sees dry signal, so it cannot mis-mix it; `Parallel` owns the dry snapshot, the latency compensation and the one canonical mix rule; and a single `ModMatrix` at a single control rate drives every modulation source. It provides a TPT/ZDF state variable filter with real resonance, cubic-Hermite fractional delays, a tape machine (hysteresis, head bump, gap loss, self-erasure, dropouts, hiss), and latency-reporting oversampled shapers.
+
+The pedals not yet ported share a header-only toolkit in `common/spt/`:
+`FableVerb` (Dattorro plate/hall/room with a modulated tank), ADAA saturation primitives, tape hysteresis, a jittered dual-grain pitch shifter, and drifting LFOs.
+
+`tests/` holds the DSP test suite (`cmake --build build --target FOFO_TESTS`, then run
+`build/FOFO_TESTS_artefacts/Release/FOFO_TESTS`). It runs on every CI build and covers
+the kernel, SWAY's voicing calibration, and regression guards for defects that have
+shipped before.
 
 ## License
 
