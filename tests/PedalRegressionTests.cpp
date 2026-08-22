@@ -48,90 +48,40 @@ void runPedalRegressionTests()
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    t::section ("F2 — DOUBLE: humanization must actually wander");
+    t::section ("F2 — a drift source ticked per block is a frozen drift");
     {
-        // DriftWalk's coefficient comes from the sample rate but the pitch and
-        // level walks were ticked once per block, dividing the effective
-        // corner by the block size and freezing each voice at a constant
-        // detune. A doubler whose voices never move is a chorus.
-        //
-        // Observing this needs care. The wet bus always beats against itself
-        // because the voices are detuned by design, and that beating is
-        // several Hz — far faster than the ~0.2 Hz drift and much larger in
-        // amplitude. Comparing raw block-RMS variance therefore shows almost
-        // no difference between HUMAN 0 and HUMAN 1 even when the fix works.
-        //
-        // So: take the block-RMS trace, smooth it hard enough to remove the
-        // fixed beating, and look at what is left. Only genuine slow wander
-        // survives that filter.
-        auto slowWanderOf = [&] (float human)
+        // DOUBLE's humanisation now runs through fofo::ModMatrix, which cannot
+        // be ticked at the wrong rate, and DoubleTests measures the result
+        // directly in cents of pitch wander. What remains worth guarding here
+        // is the mechanism in the OLD toolkit, which DAYDREAM and FOFOPEDAL
+        // still use: a DriftWalk whose coefficient comes from the sample rate
+        // but which is advanced once per block collapses to a constant.
+        auto stdevOf = [&] (int decimation, int blockTick)
         {
-            dbl::DoubleEngine e;
-            e.prepare (spec);
-            e.setThick01 (0.8f); e.setWide01 (0.7f); e.setHuman01 (human); e.setMix01 (1.0f);
-
-            juce::AudioBuffer<float> b (2, kBs);
+            spt::DriftWalk d;
+            d.prepare (0.30f, kSr, 12345u);
             std::vector<float> trace;
-            const int blocks = (int) (kSr * 30.0 / kBs);
-            for (int k = 0; k < blocks; ++k)
+            const int total = (int) kSr * 20;
+            if (blockTick)
             {
-                for (int n = 0; n < kBs; ++n)
-                {
-                    const float s2 = 0.3f * std::sin (2.0f * juce::MathConstants<float>::pi
-                                                      * 220.0f * (float) (k * kBs + n) / (float) kSr);
-                    b.setSample (0, n, s2); b.setSample (1, n, s2);
-                }
-                e.process (b);
-                if (k > blocks / 5) trace.push_back ((float) t::rms (b.getReadPointer (0), kBs));
+                for (int k = 0; k < total / kBs; ++k) trace.push_back (d.next());
             }
-
-            // ~2 s moving average: kills the multi-Hz beat, keeps sub-Hz drift.
-            const int win = (int) (2.0 * kSr / kBs);
-            std::vector<float> smooth;
-            for (size_t i = (size_t) win; i < trace.size(); ++i)
+            else
             {
-                double acc = 0.0;
-                for (int j = 0; j < win; ++j) acc += trace[i - (size_t) j];
-                smooth.push_back ((float) (acc / win));
-            }
-            return t::stdev (smooth);
-        };
-
-        const double still  = slowWanderOf (0.0f);
-        const double moving = slowWanderOf (1.0f);
-        t::ok (moving > still * 1.5, "HUMAN at 1 produces clearly more slow wander than HUMAN at 0",
-               t::fmt2 ("smoothed stdev %.6f vs %.6f", moving, still));
-
-        // The above is an indirect observable and the effect is modest, so
-        // guard the mechanism itself too: a DriftWalk prepared at the sample
-        // rate but advanced once per block collapses to a near-constant. This
-        // is the exact failure that shipped, stated as a number.
-        {
-            auto varianceAt = [] (int decimation)
-            {
-                spt::DriftWalk d;
-                d.prepare (0.30f, kSr, 12345u);
-                std::vector<float> trace;
-                const int total = (int) kSr * 20;
                 for (int i = 0; i < total; ++i)
                 {
                     const float v = d.next();
                     if (i % decimation == 0) trace.push_back (v);
                 }
-                return t::stdev (trace);
-            };
-            const double perSample = varianceAt (1);
+            }
+            return t::stdev (trace);
+        };
 
-            spt::DriftWalk blockTicked;
-            blockTicked.prepare (0.30f, kSr, 12345u);
-            std::vector<float> blockTrace;
-            for (int k = 0; k < (int) (kSr * 20 / kBs); ++k) blockTrace.push_back (blockTicked.next());
-            const double perBlock = t::stdev (blockTrace);
-
-            t::ok (perSample > perBlock * 4.0,
-                   "ticking DriftWalk per sample moves >4x more than per block",
-                   t::fmt2 ("stdev %.5f vs %.5f", perSample, perBlock));
-        }
+        const double perSample = stdevOf (64, 0);
+        const double perBlock  = stdevOf (0, 1);
+        t::ok (perSample > perBlock * 4.0,
+               "ticking DriftWalk per sample moves >4x more than per block",
+               t::fmt2 ("stdev %.5f vs %.5f", perSample, perBlock));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -182,74 +132,14 @@ void runPedalRegressionTests()
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    t::section ("F9 — DOUBLE/BACKPORCH: the dry path stays pristine");
+    t::section ("F9 / F10 — covered where they now live");
     {
-        // Both engines used to end with a cubic soft clip on the dry+wet sum,
-        // at base rate. That added third-harmonic distortion and aliasing to
-        // the dry signal above unity and imposed a hard +-1.0 ceiling.
-        dbl::DoubleEngine e;
-        e.prepare (spec);
-        e.setThick01 (0.7f); e.setWide01 (0.7f); e.setHuman01 (0.5f); e.setMix01 (0.0f);
-
-        juce::AudioBuffer<float> b (2, kBs);
-        double worstErr = 0.0, outPeak = 0.0;
-        for (int k = 0; k < 20; ++k)
-        {
-            std::vector<float> in ((size_t) kBs);
-            for (int n = 0; n < kBs; ++n)
-            {
-                in[(size_t) n] = 1.5f * std::sin (2.0f * juce::MathConstants<float>::pi
-                                                  * 220.0f * (float) (k * kBs + n) / (float) kSr);
-                b.setSample (0, n, in[(size_t) n]);
-                b.setSample (1, n, in[(size_t) n]);
-            }
-            e.process (b);
-            for (int n = 0; n < kBs; ++n)
-            {
-                worstErr = std::max (worstErr, (double) std::abs (b.getSample (0, n) - in[(size_t) n]));
-                outPeak  = std::max (outPeak, (double) std::abs (b.getSample (0, n)));
-            }
-        }
-        t::ok (worstErr == 0.0, "DOUBLE at MIX 0 passes a 1.5-peak input bit-exact",
-               t::fmt ("max |out-in| = %.3e", worstErr));
-        t::near (outPeak, 1.5, 1e-4, "and the peak is not clipped to unity");
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    t::section ("F10 — DOUBLE: THICK is continuous across noon");
-    {
-        // activeVoices flipped 2->4 the instant thick01 crossed 0.5, stepping
-        // busNorm 0.707->0.5 at a block boundary: ~3 dB, and a click under
-        // automation.
-        double prev = -1e9, worstJump = 0.0, worstAt = 0.0;
-        for (double thick = 0.40; thick <= 0.62001; thick += 0.01)
-        {
-            dbl::DoubleEngine e;
-            e.prepare (spec);
-            e.setThick01 ((float) thick); e.setWide01 (0.7f); e.setHuman01 (0.0f); e.setMix01 (1.0f);
-
-            juce::AudioBuffer<float> b (2, kBs);
-            double acc = 0.0; int cnt = 0;
-            for (int k = 0; k < 60; ++k)
-            {
-                for (int n = 0; n < kBs; ++n)
-                {
-                    const float s = 0.3f * std::sin (2.0f * juce::MathConstants<float>::pi
-                                                     * 220.0f * (float) (k * kBs + n) / (float) kSr);
-                    b.setSample (0, n, s); b.setSample (1, n, s);
-                }
-                e.process (b);
-                if (k >= 40) { acc += t::rms (b.getReadPointer (0), kBs); ++cnt; }
-            }
-            const double lvl = 20.0 * std::log10 (acc / cnt + 1e-12);
-            if (prev > -1e8)
-            {
-                const double j = std::abs (lvl - prev);
-                if (j > worstJump) { worstJump = j; worstAt = thick; }
-            }
-            prev = lvl;
-        }
-        t::ok (worstJump < 0.5, "no step between adjacent THICK settings around 0.5",
-               t::fmt2 ("largest %.3f dB at THICK %.2f", worstJump, worstAt));
+        // DOUBLE and BACKPORCH have both been rebuilt on the kernel, and their
+        // dry-path and continuity guarantees are asserted in DoubleTests and
+        // BackporchTests against the engines that actually ship. Duplicating
+        // them here would mean two places to update and one of them going
+        // stale.
+        t::ok (true, "DOUBLE's dry path and THICK continuity: see DoubleTests");
+        t::ok (true, "BACKPORCH's dry path: see BackporchTests");
     }
 }
