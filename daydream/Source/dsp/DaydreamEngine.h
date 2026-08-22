@@ -1,30 +1,41 @@
 #pragma once
-#include <juce_dsp/juce_dsp.h>
-#include "TapeSat.h"
-#include "PitchDrift.h"
-#include "ShimmerReverb.h"
-#include "spt/Shapers.h"
-#include "spt/DriftLFO.h"
+#include "fofo/Fofo.h"
+#include "fofo/Pitch.h"
+#include "fofo/Tape.h"
+#include <atomic>
 
 namespace daydream
 {
 
-// Single-knob ambient/lo-fi character engine, v3.
+// ─────────────────────────────────────────────────────────────────────────────
+// DAYDREAM — "One knob, from warm tape to dream."
 //
-// Chain:
-//   in ─► HPF(80) ─► TapeSat ─► PitchDrift (wow/flutter) ─► Chorus
-//        ─► (+ noise floor) ─► ShimmerReverb ─► duck vs dry ─┐
-//   └────────────────────── dry tap ────────────────────────┤
-//                                                  outer mix ─► LPF ─► out
+// Rebuilt on the FoFoDriver kernel. The one-knob staging was good design; it
+// was sitting on thin primitives. Everything it was built from had a defect
+// the audit named:
 //
-// The DREAM knob is staged as a journey, not a level:
-//   0.00–0.05  true bypass feel
-//   0.05–0.35  "warm tape" — saturation blooms in, a small room opens up
-//   0.35–0.65  "memory" — wow/flutter wobbles, chorus widens, the room
+//   F6  every filter came from a first-order toolkit, so nothing anywhere in
+//       the signal path could resonate or move
+//   F8  the shimmer, the octave and the drift all came from one grain shifter
+//       reading its tap with linear interpolation
+//   F11 no spectral or early-reflection machinery of any kind, so the "room"
+//       that opens up was a bare tank
+//
+// The knob's journey is unchanged, because that part was right:
+//
+//   0.00–0.05  effectively bypassed
+//   0.05–0.35  warm tape — saturation blooms in, a small room opens
+//   0.35–0.65  memory — wow and flutter wobble, the field widens, the room
 //              becomes a hall
-//   0.65–1.00  "dream" — shimmer climbs in octaves, decay approaches
-//              infinite, the wet ducks under your playing and swells back
-//              in the gaps, the top end gauzes over
+//   0.65–1.00  dream — shimmer climbs in octaves, the decay stretches toward
+//              endless, the wash ducks under playing and swells back in the
+//              gaps, and the top gauzes over
+//
+// What is new underneath: a real tape machine rather than a saturator (head
+// bump, gap loss, self-erasure, hiss), early reflections in front of an FDN
+// with per-band decay so the wash never turns to mud, a pitch shifter that
+// does not veil the top end, and one modulation matrix driving all of it.
+// ─────────────────────────────────────────────────────────────────────────────
 class DaydreamEngine
 {
 public:
@@ -49,35 +60,53 @@ private:
         return t * t * (3.0f - 2.0f * t);
     }
 
-    juce::dsp::ProcessSpec spec {};
+    fofo::Spec spec {};
 
-    std::vector<juce::dsp::IIR::Filter<float>> inputHPF;
+    fofo::Svf inputHp[2];
 
-    TapeSat                  tapeSat;
-    PitchDrift               drift;
-    juce::dsp::Chorus<float> chorus;
-    ShimmerReverb            reverb;
+    // Tape: the "warm" third of the knob, and the wow that arrives with the
+    // middle third.
+    fofo::TapeSaturator tapeSat;
+    fofo::TapeTransport transport;
 
-    std::vector<juce::dsp::IIR::Filter<float>> outputLPF;
-    float lastLPFhz { 0.0f };
+    // Space: early reflections into an FDN, with a pitch shifter inside the
+    // feedback path for the shimmer.
+    fofo::EarlyReflections early;
+    fofo::Fdn8             tank;
+    fofo::PitchShifter     shimmer[2];
+    fofo::Svf              shimHp[2], shimLp[2];
+    float                  shimFbL { 0.0f }, shimFbR { 0.0f };
 
-    juce::AudioBuffer<float> dryBuffer;
+    fofo::Svf outputLp[2];
 
-    // Ducking: the wet wash gets out of the way while you play and swells
-    // back in the gaps — the trick that keeps high DREAM settings usable.
-    spt::EnvFollower duckEnv;
-    float duckAmount { 0.0f };
+    // One matrix: transport wow, the widening chorus, the ducker, and the
+    // noise floor all hang off it.
+    fofo::ModMatrix           mod;
+    fofo::ModMatrix::SourceId sWow {}, sWowR {}, sDuck {};
+    fofo::ModMatrix::DestId   dWowL {}, dWowR {}, dDuck {};
+    int                       rWowL {}, rWowR {}, rDuck {};
 
-    // Noise floor texture: ~−70 dB filtered noise into the reverb input,
-    // scaled up slightly by playing energy. "The pedal is powered on."
-    spt::DriftWalk noiseSrc;
-    spt::OnePoleLP noiseLP;
-    float noiseGain { 0.0f };
+    // The transport advances the matrix once per sample, and the ducker keys
+    // off the DRY signal — so the tick callback needs to reach the dry buffer
+    // at the sample it is currently on.
+    int          tickIndex { 0 };
+    const float* tickDryL { nullptr };
+    const float* tickDryR { nullptr };
 
-    juce::SmoothedValue<float> dryGainSmoothed { 1.0f };
-    juce::SmoothedValue<float> wetGainSmoothed { 0.0f };
+    fofo::Rng noiseRng;
+    fofo::Svf noiseLp;
+
+    juce::AudioBuffer<float> drySnap, wetBus;
+
+    juce::SmoothedValue<float> dryGainSm { 1.0f };
+    juce::SmoothedValue<float> wetGainSm { 0.0f };
 
     float dreamTarget { 0.35f };
+    float dreamSmoothed { 0.35f };
+
+    // Macro-derived, recomputed per block.
+    float tapeAmt { 0.0f }, wowMs { 0.0f }, shimAmt { 0.0f };
+    float duckAmt { 0.0f }, noiseGain { 0.0f }, earlyAmt { 0.0f };
 
     std::atomic<float> inputPeakMax  { 0.0f };
     std::atomic<float> outputPeakMax { 0.0f };

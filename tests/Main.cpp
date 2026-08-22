@@ -11,6 +11,7 @@ int main()
     runSwayTests();
     runBackporchTests();
     runDoubleTests();
+    runDaydreamTests();
 
     return t::report();
 }

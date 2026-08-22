@@ -139,9 +139,6 @@ set_target_properties(DaydreamBinaryData PROPERTIES POSITION_INDEPENDENT_CODE TR
 target_sources(DAYDREAM PRIVATE
     daydream/Source/PluginProcessor.cpp
     daydream/Source/PluginEditor.cpp
-    daydream/Source/dsp/TapeSat.cpp
-    daydream/Source/dsp/PitchDrift.cpp
-    daydream/Source/dsp/ShimmerReverb.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
 )
 
@@ -346,6 +343,7 @@ target_sources(BACKPORCH PRIVATE
     backporch/Source/PluginProcessor.cpp
     backporch/Source/PluginEditor.cpp
     backporch/Source/dsp/BackporchEngine.cpp
+    daydream/Source/dsp/DaydreamEngine.cpp
 )
 
 target_include_directories(BACKPORCH PRIVATE backporch/Source common)
@@ -411,6 +409,7 @@ target_sources(SWAY PRIVATE
     sway/Source/PluginEditor.cpp
     sway/Source/dsp/SwayEngine.cpp
     backporch/Source/dsp/BackporchEngine.cpp
+    daydream/Source/dsp/DaydreamEngine.cpp
 )
 
 target_include_directories(SWAY PRIVATE sway/Source common)
@@ -449,6 +448,7 @@ target_sources(FOFO_TESTS PRIVATE
     tests/SwayTests.cpp
     tests/BackporchTests.cpp
     tests/DoubleTests.cpp
+    tests/DaydreamTests.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp
@@ -456,6 +456,7 @@ target_sources(FOFO_TESTS PRIVATE
     fofopedal/Source/dsp/Drive.cpp
     sway/Source/dsp/SwayEngine.cpp
     backporch/Source/dsp/BackporchEngine.cpp
+    daydream/Source/dsp/DaydreamEngine.cpp
 )
 
 target_include_directories(FOFO_TESTS PRIVATE common tests .)
