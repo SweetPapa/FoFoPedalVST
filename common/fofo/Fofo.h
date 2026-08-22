@@ -9,6 +9,7 @@
 //   Node.h        Node / Chain / Parallel / MixRule
 //   Oversampler.h latency-reporting oversampled shaper node
 //   Saturation.h  ADAA tanh, tape hysteresis, output clip
+//   Pitch.h       grain pitch shifter, cents helpers
 //   Space.h       early reflections, 8-line FDN with per-band decay
 //   Tape.h        record head, transport, replay head
 //
@@ -21,5 +22,6 @@
 #include "Node.h"
 #include "Oversampler.h"
 #include "Saturation.h"
+#include "Pitch.h"
 #include "Space.h"
 #include "Tape.h"

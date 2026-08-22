@@ -10,6 +10,7 @@ int main()
     runPedalRegressionTests();
     runSwayTests();
     runBackporchTests();
+    runDoubleTests();
 
     return t::report();
 }

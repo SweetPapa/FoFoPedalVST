@@ -5,3 +5,4 @@ void runKernelTests();
 void runPedalRegressionTests();
 void runSwayTests();
 void runBackporchTests();
+void runDoubleTests();

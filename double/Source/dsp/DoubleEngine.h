@@ -1,26 +1,42 @@
 #pragma once
-#include <juce_dsp/juce_dsp.h>
-#include "spt/GrainShifter.h"
-#include "spt/DriftLFO.h"
-#include "spt/Shapers.h"
+#include "fofo/Fofo.h"
+#include "fofo/Pitch.h"
+#include <atomic>
 
 namespace dbl
 {
 
+// ─────────────────────────────────────────────────────────────────────────────
 // DOUBLE — "Every take you didn't record."
 //
-// Up to four micro-detuned grain-shifted voices, each with its own slow
-// random drift on pitch, timing and level — the humanization is the whole
-// point: a static detune sounds like a chorus pedal, a *wandering* detune
-// sounds like a player who did another take.
+// Rebuilt on the FoFoDriver kernel. v1's own header said it best: "a static
+// detune sounds like a chorus pedal, a wandering detune sounds like a player
+// who did another take." It then implemented the first one, because the random
+// walks driving pitch and level were advanced once per audio BLOCK while their
+// coefficients were derived from the sample rate — dividing their effective
+// corner by the block size and freezing each voice at a constant offset.
 //
-//   THICK — detune amount + brings voices 3/4 in past halfway
-//   WIDE  — stereo spread of the voices (fold to centre stays mono-safe)
-//   HUMAN — how much the takes wander (pitch ±4 cents, timing ±8 ms, level)
-//   MIX   — additive: dry stays untouched, doubles layer on top
+// That was patched in place first (it was too damaging to leave), but the
+// patch could not stop it recurring. Here the drift runs through the kernel's
+// ModMatrix, which is prepared with one control rate and ticked only by
+// itself, so the mismatch is no longer expressible.
 //
-// Mode voices the wet bus for the source: VOX / STRINGS / SYNTH.
-// Wet path is HPF'd ≥120 Hz always — doubles never add mud.
+// The other half is F8: every voice was pitched by a grain shifter reading its
+// tap with linear interpolation, whose moving read pointer imposes amplitude-
+// modulated high-frequency loss. Four of them summed compounds it. Voices now
+// use fofo::PitchShifter, which reads with cubic Hermite.
+//
+// Controls are unchanged:
+//
+//   THICK — detune spread, and brings voices 3 and 4 in past halfway
+//   WIDE  — stereo spread of the voices, folding to centre for mono safety
+//   HUMAN — how far the takes wander in pitch, timing and level
+//   MIX   — additive: the dry is never attenuated to make room for the doubles
+//
+// Modes voice the wet bus for the source: VOX / STRINGS / SYNTH. The wet bus
+// is always high-passed, so doubles never add mud, and the dry path is never
+// touched — not by a mix rule, and not by a clipper.
+// ─────────────────────────────────────────────────────────────────────────────
 class DoubleEngine
 {
 public:
@@ -44,31 +60,34 @@ public:
     float fetchOutputPeak() noexcept { return outputPeak.exchange (0.0f); }
 
 private:
-    void updateModeVoicing();
+    void applyParams();
 
-    juce::dsp::ProcessSpec spec {};
+    fofo::Spec spec {};
 
-    Mode  mode    { Mode::Vox };
+    Mode  mode      { Mode::Vox };
     bool  modeDirty { true };
-    float thick01 { 0.5f };
-    float wide01  { 0.7f };
-    float human01 { 0.5f };
-    float mix01   { 0.6f };
+    float thick01   { 0.5f };
+    float wide01    { 0.7f };
+    float human01   { 0.5f };
+    float mix01     { 0.6f };
 
-    spt::GrainShifter shifter[kVoices];
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> voiceDelay[kVoices];
-    spt::DriftWalk pitchDrift[kVoices];
-    spt::DriftWalk timeDrift[kVoices];
-    spt::DriftWalk levelDrift[kVoices];
+    fofo::PitchShifter shifter[kVoices];
+    fofo::DelayLine    voiceDelay[kVoices];
+
+    // One matrix for every voice's humanisation. Three destinations per voice
+    // — pitch, timing, level — each fed by its own drift source.
+    fofo::ModMatrix           human;
+    fofo::ModMatrix::SourceId sPitch[kVoices] {}, sTime[kVoices] {}, sLevel[kVoices] {};
+    fofo::ModMatrix::DestId   dPitch[kVoices] {}, dTime[kVoices] {}, dLevel[kVoices] {};
+    int                       rPitch[kVoices] {}, rTime[kVoices] {}, rLevel[kVoices] {};
+
     juce::SmoothedValue<float> ratioSm[kVoices];
     juce::SmoothedValue<float> gainSm[kVoices];
-    juce::SmoothedValue<float> busNormSm;   // continuous 1/sqrt(effective voices)
+    juce::SmoothedValue<float> busNormSm;
 
-    // Wet-bus voicing per mode.
-    juce::dsp::IIR::Filter<float> wetHP[2], wetLP[2], wetDip[2];
+    fofo::Svf wetHp[2], wetDip[2], wetLp[2];
 
-    juce::AudioBuffer<float> wetBus;   // 2ch
-    juce::AudioBuffer<float> monoSrc;  // 1ch doubling source
+    juce::AudioBuffer<float> wetBus, monoSrc;
 
     std::atomic<float> inputPeak  { 0.0f };
     std::atomic<float> outputPeak { 0.0f };

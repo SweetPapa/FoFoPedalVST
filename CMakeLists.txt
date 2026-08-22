@@ -448,6 +448,7 @@ target_sources(FOFO_TESTS PRIVATE
     tests/PedalRegressionTests.cpp
     tests/SwayTests.cpp
     tests/BackporchTests.cpp
+    tests/DoubleTests.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp
