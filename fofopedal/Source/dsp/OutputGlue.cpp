@@ -8,7 +8,7 @@ void OutputGlue::prepare (const juce::dsp::ProcessSpec& s)
     spec = s;
 
     hfRolloff.clear(); hfRolloff.resize ((size_t) s.numChannels);
-    compEnv  .assign ((size_t) s.numChannels, 0.0f);
+    compEnv = 0.0f;
 
     const auto coefMs = [&] (float ms)
     {
@@ -24,7 +24,7 @@ void OutputGlue::prepare (const juce::dsp::ProcessSpec& s)
 void OutputGlue::reset()
 {
     for (auto& f : hfRolloff) f.reset();
-    std::fill (compEnv.begin(), compEnv.end(), 0.0f);
+    compEnv = 0.0f;
 }
 
 void OutputGlue::setAmount01 (float v) noexcept
@@ -61,23 +61,26 @@ void OutputGlue::process (juce::AudioBuffer<float>& buffer) noexcept
     if (defeated || amount < 1.0e-3f) return;
     if (dirty) rebuildCoefficients();
 
-    const int nCh = juce::jmin (buffer.getNumChannels(), (int) compEnv.size());
+    const int nCh = juce::jmin (buffer.getNumChannels(), (int) hfRolloff.size());
     const int nS  = buffer.getNumSamples();
+    if (nCh == 0 || nS == 0) return;
 
     // Mild 3rd-harmonic shaper: x - α x³ (Chebyshev-T3-flavoured), tanh
     // backstop for safety.
     const float satAmt = amount * 0.18f; // very gentle
+    const float threshDb = juce::Decibels::gainToDecibels (threshLin + 1.0e-9f);
 
-    for (int ch = 0; ch < nCh; ++ch)
+    // Sample-outer so the bus compressor is stereo-linked — an unlinked bus
+    // comp is the fastest way to make a mix sound like it's breathing sideways.
+    for (int n = 0; n < nS; ++n)
     {
-        auto* d = buffer.getWritePointer (ch);
-        float env = compEnv[(size_t) ch];
-
-        for (int n = 0; n < nS; ++n)
+        // 1) Subtle 3rd-harmonic saturation, and build the linked key.
+        float key = 0.0f;
+        for (int ch = 0; ch < nCh; ++ch)
         {
+            auto* d = buffer.getWritePointer (ch);
             float x = d[n];
 
-            // 1) Subtle 3rd-harmonic saturation.
             if (satAmt > 0.0f)
             {
                 const float xc = juce::jlimit (-1.5f, 1.5f, x);
@@ -85,25 +88,26 @@ void OutputGlue::process (juce::AudioBuffer<float>& buffer) noexcept
                 x = 0.85f * shaped + 0.15f * std::tanh (x);
             }
 
-            // 2) Bus comp (soft-knee).
-            const float ax = std::abs (x);
-            const float c = (ax > env) ? ampAtk : ampRel;
-            env = c * env + (1.0f - c) * ax;
-
-            const float envDb   = juce::Decibels::gainToDecibels (env + 1.0e-9f);
-            const float threshDb = juce::Decibels::gainToDecibels (threshLin + 1.0e-9f);
-            const float over    = envDb - threshDb;
-            float reductionDb = 0.0f;
-            if (over > 0.0f) reductionDb = (ratioInv - 1.0f) * over;
-            x *= juce::Decibels::decibelsToGain (reductionDb) * makeup;
-
-            // 3) HF rolloff.
-            x = hfRolloff[(size_t) ch].processSample (x);
-
             d[n] = x;
+            key = juce::jmax (key, std::abs (x));
         }
 
-        compEnv[(size_t) ch] = env;
+        // 2) One bus comp for the whole bus (soft-knee).
+        const float c = (key > compEnv) ? ampAtk : ampRel;
+        compEnv = c * compEnv + (1.0f - c) * key;
+
+        const float envDb = juce::Decibels::gainToDecibels (compEnv + 1.0e-9f);
+        const float over  = envDb - threshDb;
+        float reductionDb = 0.0f;
+        if (over > 0.0f) reductionDb = (ratioInv - 1.0f) * over;
+        const float gainLin = juce::Decibels::decibelsToGain (reductionDb) * makeup;
+
+        // 3) Apply the shared gain, then per-channel HF rolloff.
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            auto* d = buffer.getWritePointer (ch);
+            d[n] = hfRolloff[(size_t) ch].processSample (d[n] * gainLin);
+        }
     }
 }
 

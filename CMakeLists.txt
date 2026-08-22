@@ -434,3 +434,36 @@ target_link_libraries(SWAY PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+# ─── FoFoDriver test suite ────────────────────────────────────────────────────
+# Kernel behaviour plus permanent regression guards for the DSP defects fixed
+# in the Step 0 pass. Console app; returns non-zero on any failure so CI gates
+# on it. Run with:  cmake --build build --target FOFO_TESTS && <artefact>/fofotests
+juce_add_console_app(FOFO_TESTS PRODUCT_NAME "fofotests")
+
+target_sources(FOFO_TESTS PRIVATE
+    tests/Main.cpp
+    tests/KernelTests.cpp
+    tests/PedalRegressionTests.cpp
+    # Real pedal DSP, so the regression guards test what actually ships.
+    double/Source/dsp/DoubleEngine.cpp
+    fofopedal/Source/dsp/Character.cpp
+    fofopedal/Source/dsp/OutputGlue.cpp
+    fofopedal/Source/dsp/Drive.cpp
+)
+
+target_include_directories(FOFO_TESTS PRIVATE common tests .)
+
+target_compile_definitions(FOFO_TESTS PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_STANDALONE_APPLICATION=1
+    JUCE_REPORT_APP_USAGE=0
+    JUCE_WEB_BROWSER=0
+)
+
+target_link_libraries(FOFO_TESTS PRIVATE
+    juce::juce_dsp
+    PUBLIC
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)

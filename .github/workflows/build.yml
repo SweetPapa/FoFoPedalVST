@@ -34,6 +34,7 @@ jobs:
               - 'sway/**'
               - 'ui/**'
               - 'Resources/**'
+              - 'tests/**'
               - 'CMakeLists.txt'
               - 'cmake/**'
               - '.github/workflows/build.yml'
@@ -94,6 +95,16 @@ jobs:
               cmake --build build --target "${t}_AU" --config Release
             fi
           done
+
+      - name: Build and run the DSP test suite
+        shell: bash
+        run: |
+          cmake --build build --target FOFO_TESTS --config Release
+          if [ "${{ matrix.name }}" = "windows" ]; then
+            ./build/FOFO_TESTS_artefacts/Release/FOFO_TESTS.exe
+          else
+            ./build/FOFO_TESTS_artefacts/Release/FOFO_TESTS
+          fi
 
       - name: Collect artifacts
         shell: bash

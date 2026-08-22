@@ -25,7 +25,7 @@ private:
 
     juce::dsp::ProcessSpec spec {};
     std::vector<juce::dsp::IIR::Filter<float>> hfRolloff;
-    std::vector<float> compEnv;
+    float compEnv { 0.0f };   // stereo-linked: one detector for the whole bus
     float ampAtk { 0.0f };
     float ampRel { 0.0f };
     float threshLin { 1.0f };
