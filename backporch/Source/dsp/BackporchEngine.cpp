@@ -172,7 +172,10 @@ void BackporchEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         {
             const float tail = tailTilt[ch].process (wet.getReadPointer (ch)[n]) * duck;
             const float dry  = drySnap.getReadPointer (ch)[n];
-            buffer.getWritePointer (ch)[n] = spt::softClipCubic (dry * dryGain + tail * wetGain);
+            // No output clipper: the dry path stays pristine. A base-rate
+            // cubic clip on the sum added 3rd-harmonic distortion and
+            // aliasing to the dry signal whenever the source ran hot.
+            buffer.getWritePointer (ch)[n] = dry * dryGain + tail * wetGain;
         }
     }
 

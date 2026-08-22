@@ -48,6 +48,10 @@ void Drive::prepare (const juce::dsp::ProcessSpec& s)
 
     dryBuffer.setSize ((int) s.numChannels, (int) s.maximumBlockSize, false, true, true);
 
+    dryDelay.setMaximumDelayInSamples (64);
+    dryDelay.prepare (s);
+    updateDryDelay();
+
     adaa   .assign (s.numChannels, {});
     hyst   .assign (s.numChannels, {});
     dcBlock.assign (s.numChannels, {});
@@ -71,6 +75,7 @@ void Drive::reset()
     for (auto& h : hyst)    h.reset();
     for (auto& b : dcBlock) b.reset();
     touchEnv.reset();
+    dryDelay.reset();
 }
 
 void Drive::setAlgo (Algo a) noexcept
@@ -92,6 +97,16 @@ void Drive::rebuildOversampler()
         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
     os->initProcessing (spec.maximumBlockSize);
     os->reset();
+    updateDryDelay();
+}
+
+void Drive::updateDryDelay()
+{
+    if (! os || spec.sampleRate <= 0.0) return;
+    // Use the raw fractional latency, not the ceil'd int we report to the
+    // host — Lagrange3rd interpolates, and the exact value is what keeps the
+    // parallel sum phase-aligned.
+    dryDelay.setDelay (juce::jlimit (0.0f, 63.0f, (float) os->getLatencyInSamples()));
 }
 
 void Drive::rebuildFilters()
@@ -246,6 +261,16 @@ void Drive::process (juce::AudioBuffer<float>& buffer) noexcept
             v       = toneHigh[(size_t) ch].processSample (v);
             d[n] = v;
         }
+    }
+
+    // Latency-compensate the dry snapshot so it lines up with the wet path
+    // coming out of the oversampler. Run this every block regardless of MIX
+    // so the line never holds stale audio when MIX is automated off unity.
+    {
+        juce::dsp::AudioBlock<float> dryBlock (dryBuffer.getArrayOfWritePointers(),
+                                               (size_t) nCh, 0, (size_t) nS);
+        juce::dsp::ProcessContextReplacing<float> ctx (dryBlock);
+        dryDelay.process (ctx);
     }
 
     // Parallel blend (mix=1 → all wet, mix=0 → all dry).

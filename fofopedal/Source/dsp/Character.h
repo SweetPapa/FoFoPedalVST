@@ -36,7 +36,11 @@ private:
 
     juce::dsp::ProcessSpec spec {};
 
-    std::vector<float> envState;
+    // ONE envelope for all channels. Independent per-channel detectors make
+    // the two sides duck by different amounts at different moments, which
+    // wanders the centre image and pumps the width asymmetrically — and this
+    // block is always on, so it did that to everything the plugin output.
+    float keyEnv        { 0.0f };
     float ampAtk        { 0.0f };
     float ampRelFast    { 0.0f };
     float ampRelSlow    { 0.0f };

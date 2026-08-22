@@ -43,6 +43,7 @@ public:
 private:
     void rebuildOversampler();
     void rebuildFilters();
+    void updateDryDelay();
     void markToneDirty() noexcept { toneDirty = true; }
 
     juce::dsp::ProcessSpec spec {};
@@ -79,6 +80,14 @@ private:
     std::vector<float> envScratch;    // one env value per base sample
 
     juce::AudioBuffer<float> dryBuffer;
+
+    // The parallel MIX blend recombines the dry snapshot with a wet path that
+    // has been through the oversampler — which delays it by a fractional
+    // number of samples. Summing the two without matching that delay is a
+    // comb filter, and since the global MIX macro scales this block's mix,
+    // it would fire on every character below 100%. Delay the dry to match.
+    // (Same fix VROOM already applies in its PluginProcessor.)
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> dryDelay { 64 };
 };
 
 } // namespace fofopedal
