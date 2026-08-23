@@ -13,6 +13,7 @@ int main()
     runDoubleTests();
     runDaydreamTests();
     runFofopedalTests();
+    runPresetTests();
 
     return t::report();
 }

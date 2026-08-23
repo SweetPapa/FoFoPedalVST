@@ -406,6 +406,46 @@ juce::String VroomAudioProcessor::getCurrentIRDisplayName() const
     return names[s];
 }
 
+int VroomAudioProcessor::getNumPrograms()
+{
+    return (int) presetManager.getFactoryPresets().size();
+}
+
+int VroomAudioProcessor::getCurrentProgram()
+{
+    // A user preset is not in the host's list at all, so report the factory
+    // preset the session last sat on rather than inventing an index.
+    if (! presetManager.isCurrentFactory()) return lastFactoryProgram;
+
+    const auto& bank = presetManager.getFactoryPresets();
+    const auto  name = presetManager.getCurrentName();
+
+    for (size_t i = 0; i < bank.size(); ++i)
+        if (bank[i].name == name)
+            return (int) i;
+
+    return lastFactoryProgram;
+}
+
+void VroomAudioProcessor::setCurrentProgram (int index)
+{
+    if (index < 0 || index >= getNumPrograms()) return;
+
+    // Hosts re-assert the current program after restoring a session, which
+    // would overwrite whatever the user had dialled in.
+    if (index == getCurrentProgram()) return;
+
+    lastFactoryProgram = index;
+    presetManager.loadByName (presetManager.getFactoryPresets()[(size_t) index].name, true);
+}
+
+const juce::String VroomAudioProcessor::getProgramName (int index)
+{
+    if (index < 0 || index >= getNumPrograms()) return {};
+
+    return presetManager.getFactoryPresets()[(size_t) index].name;
+}
+
 juce::AudioProcessorEditor* VroomAudioProcessor::createEditor()
 {
     return new VroomAudioProcessorEditor (*this);

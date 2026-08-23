@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Knob from './components/Knob.jsx';
 import ModeSwitch from './components/ModeSwitch.jsx';
 import Meter from './components/Meter.jsx';
+import PresetStepper from './components/PresetStepper.jsx';
 import { isJuceHost } from './juceBridge.js';
 
 const ACCENT = '#ff9b6b';
@@ -43,13 +44,13 @@ export default function App() {
           <h1 className="text-2xl font-extrabold tracking-[0.35em] leading-none" style={{ color: ACCENT }}>BACKPORCH</h1>
           <span className="text-[10px] uppercase tracking-[0.3em] opacity-50 mt-1.5 whitespace-nowrap">Sweet Papa Tech</span>
         </div>
-        <div className="flex-1 flex items-center justify-end gap-4">
+        <div className="flex-1 flex justify-center min-w-0">
+          <PresetStepper accent={ACCENT} />
+        </div>
+        <div className="flex flex-col gap-1.5 shrink-0">
           <Meter label="In" level={levels.in} />
           <Meter label="Out" level={levels.out} />
         </div>
-        <span className="text-[10px] uppercase tracking-widest opacity-40 shrink-0 whitespace-nowrap">
-          {isJuceHost ? 'plugin' : 'preview'} · series b
-        </span>
       </header>
 
       <main className="relative flex-1 flex flex-col items-center justify-center gap-6">
@@ -64,7 +65,7 @@ export default function App() {
 
       <footer className="relative px-6 py-3 border-t border-white/10 text-[10px] opacity-40 flex justify-between">
         <span>sounds produced, not wet</span>
-        <span>hpf send · pre-delay · ducked tail</span>
+        <span>hpf send · pre-delay · ducked tail · {isJuceHost ? 'plugin' : 'preview'} · series b</span>
       </footer>
     </div>
     </FitScale>

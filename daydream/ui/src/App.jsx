@@ -2,6 +2,7 @@ import FitScale from './components/FitScale.jsx';
 import ResizeHandle from './components/ResizeHandle.jsx';
 import React, { useEffect, useState } from 'react';
 import BigKnob from './components/BigKnob.jsx';
+import PresetStepper from './components/PresetStepper.jsx';
 import Meter from './components/Meter.jsx';
 import { isJuceHost } from './juceBridge.js';
 
@@ -32,7 +33,7 @@ export default function App() {
 
   return (
     <>
-    <FitScale designWidth={520} designHeight={460} background="#10081f">
+    <FitScale designWidth={520} designHeight={490} background="#10081f">
     <div className="relative w-full h-full flex flex-col text-dream-ink overflow-hidden">
       {/* Base layer */}
       <div className="absolute inset-0 bg-dream-deeper" />
@@ -80,10 +81,11 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 flex items-center justify-center">
+        <main className="flex-1 flex flex-col items-center justify-center gap-3">
           <div className="animate-drift">
-            <BigKnob paramId="dream" label="Dream" size={260} />
+            <BigKnob paramId="dream" label="Dream" size={252} />
           </div>
+          <PresetStepper accent="#c084ff" />
         </main>
 
         <footer className="px-6 py-3 border-t border-dream-edge/60 text-[10px] text-dream-dim flex justify-between">
@@ -93,7 +95,7 @@ export default function App() {
       </div>
     </div>
     </FitScale>
-    <ResizeHandle minWidth={380} minHeight={336} />
+    <ResizeHandle minWidth={380} minHeight={358} />
     </>
   );
 }

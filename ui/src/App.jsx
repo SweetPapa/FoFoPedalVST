@@ -110,7 +110,7 @@ export default function App() {
         <CabSection />
 
         <footer className="px-6 py-2 border-t border-vroom-edge text-[10px] text-vroom-dim flex justify-between">
-          <span>4 voices · source-aware · 16 factory presets</span>
+          <span>4 voices · source-aware · 20 factory presets</span>
           <span>made for FoFo · {isJuceHost ? 'plugin' : 'dev preview'} · v0.1.0</span>
         </footer>
       </div>

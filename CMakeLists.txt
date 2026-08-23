@@ -139,6 +139,7 @@ set_target_properties(DaydreamBinaryData PROPERTIES POSITION_INDEPENDENT_CODE TR
 target_sources(DAYDREAM PRIVATE
     daydream/Source/PluginProcessor.cpp
     daydream/Source/PluginEditor.cpp
+    daydream/Source/presets/PresetBank.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
     fofopedal/Source/dsp/FofoEngine.cpp
     fofopedal/Source/dsp/Mod.cpp
@@ -283,6 +284,7 @@ set_target_properties(DoubleBinaryData PROPERTIES POSITION_INDEPENDENT_CODE TRUE
 target_sources(DOUBLE PRIVATE
     double/Source/PluginProcessor.cpp
     double/Source/PluginEditor.cpp
+    double/Source/presets/PresetBank.cpp
     double/Source/dsp/DoubleEngine.cpp
 )
 
@@ -347,6 +349,7 @@ set_target_properties(BackporchBinaryData PROPERTIES POSITION_INDEPENDENT_CODE T
 target_sources(BACKPORCH PRIVATE
     backporch/Source/PluginProcessor.cpp
     backporch/Source/PluginEditor.cpp
+    backporch/Source/presets/PresetBank.cpp
     backporch/Source/dsp/BackporchEngine.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
     fofopedal/Source/dsp/FofoEngine.cpp
@@ -417,6 +420,7 @@ set_target_properties(SwayBinaryData PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 target_sources(SWAY PRIVATE
     sway/Source/PluginProcessor.cpp
     sway/Source/PluginEditor.cpp
+    sway/Source/presets/PresetBank.cpp
     sway/Source/dsp/SwayEngine.cpp
     backporch/Source/dsp/BackporchEngine.cpp
     daydream/Source/dsp/DaydreamEngine.cpp
@@ -465,6 +469,12 @@ target_sources(FOFO_TESTS PRIVATE
     tests/DoubleTests.cpp
     tests/DaydreamTests.cpp
     tests/FofopedalTests.cpp
+    tests/PresetTests.cpp
+    # The shipping preset banks, so the data is tested and not just the code.
+    sway/Source/presets/PresetBank.cpp
+    backporch/Source/presets/PresetBank.cpp
+    double/Source/presets/PresetBank.cpp
+    daydream/Source/presets/PresetBank.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp
@@ -491,6 +501,7 @@ target_compile_definitions(FOFO_TESTS PRIVATE
 
 target_link_libraries(FOFO_TESTS PRIVATE
     juce::juce_dsp
+    juce::juce_audio_processors
     PUBLIC
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
