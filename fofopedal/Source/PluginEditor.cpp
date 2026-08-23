@@ -151,7 +151,7 @@ FofopedalAudioProcessorEditor::FofopedalAudioProcessorEditor (FofopedalAudioProc
                            // so the web UI's drag grip drives resizing instead.
                            if (args.size() >= 2)
                                setSize (juce::jlimit (640, 1960, (int) args[0]),
-                                        juce::jlimit (522, 1600, (int) args[1]));
+                                        juce::jlimit (418, 1280, (int) args[1]));
                            completion ({});
                        });
 
@@ -159,8 +159,8 @@ FofopedalAudioProcessorEditor::FofopedalAudioProcessorEditor (FofopedalAudioProc
     addAndMakeVisible (*webView);
 
     setResizable (true, true);
-    setResizeLimits (640, 522, 1960, 1600);
-    setSize (980, 800);
+    setResizeLimits (640, 418, 1960, 1280);
+    setSize (980, 640);
 
     webView->goToURL (webView->getResourceProviderRoot());
 

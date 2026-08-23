@@ -38,16 +38,16 @@ export default function App() {
       <div className="absolute inset-0 pointer-events-none opacity-[0.05]"
            style={{ background: 'radial-gradient(ellipse 80% 50% at 50% 110%, #ff9b6b 0%, transparent 60%)' }} />
 
-      <header className="relative px-6 pt-4 pb-3 flex items-center justify-between border-b border-white/10">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-extrabold tracking-[0.35em]" style={{ color: ACCENT }}>BACKPORCH</h1>
-          <span className="text-[10px] uppercase tracking-[0.3em] opacity-50">Sweet Papa Tech</span>
+      <header className="relative px-6 pt-4 pb-3 flex items-center gap-5 border-b border-white/10">
+        <div className="flex flex-col shrink-0">
+          <h1 className="text-2xl font-extrabold tracking-[0.35em] leading-none" style={{ color: ACCENT }}>BACKPORCH</h1>
+          <span className="text-[10px] uppercase tracking-[0.3em] opacity-50 mt-1.5 whitespace-nowrap">Sweet Papa Tech</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex-1 flex items-center justify-end gap-4">
           <Meter label="In" level={levels.in} />
           <Meter label="Out" level={levels.out} />
         </div>
-        <span className="text-[10px] uppercase tracking-widest opacity-40">
+        <span className="text-[10px] uppercase tracking-widest opacity-40 shrink-0 whitespace-nowrap">
           {isJuceHost ? 'plugin' : 'preview'} · series b
         </span>
       </header>
