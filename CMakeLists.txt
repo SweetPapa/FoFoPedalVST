@@ -7,8 +7,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target")
 
+# Universal binaries, so the pedals load on Intel Macs as well as Apple Silicon.
+#
+# FORCE is load-bearing and not a shortcut: project() has already created
+# CMAKE_OSX_ARCHITECTURES as an EMPTY cache entry by this point, and a
+# set(... CACHE ...) against an existing entry does nothing without it. Under
+# the Makefile generator CI uses, that silently produced host-only (arm64)
+# binaries for every pedal while a local Xcode build stayed universal — so the
+# defect could not be seen from a developer machine.
+#
+# The guard still gives the command line the last word: -DCMAKE_OSX_ARCHITECTURES=arm64
+# leaves the entry non-empty, the condition is false, and nothing here runs.
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures" FORCE)
 endif()
 
 include(cmake/CPM.cmake)
