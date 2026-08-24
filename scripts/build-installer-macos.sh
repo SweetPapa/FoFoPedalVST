@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build-installer-macos.sh — package all six pedals into a GUI .pkg installer.
+# build-installer-macos.sh — package all seven pedals into a GUI .pkg installer.
 #
 # Usage:
 #   ./scripts/build-installer-macos.sh                # unsigned pkg (right-click → Open to install)
@@ -36,7 +36,7 @@ DIST_DIR="$REPO_ROOT/dist"
 STAGE="$(mktemp -d /tmp/sweetpapa-pkg.XXXXXX)"
 trap 'rm -rf "$STAGE"' EXIT
 
-PLUGINS=(VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY)
+PLUGINS=(VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY DREAMRIPPER)
 
 # ── auto-detect personal signing identities ─────────────────────────────────
 # Sweet Papa releases are personal — never sign with institutional (Stanford)
@@ -99,14 +99,15 @@ cat > "$STAGE/distribution.xml" <<EOF
 <installer-gui-script minSpecVersion="2">
     <title>Sweet Papa Pedals ${VERSION}</title>
     <welcome mime-type="text/plain"><![CDATA[
-Six free pedals for indie-rock production:
+Seven free pedals for indie-rock production:
 
-  DOUBLE     — every take you didn't record
-  BACKPORCH  — sounds produced, not wet
-  SWAY       — makes static tracks move like a band
-  VROOM      — the dirt pedal that lands in the mix
-  DAYDREAM   — one knob, warm tape to dream
-  FOFOPEDAL  — twelve characters, one MIX knob
+  DOUBLE       — every take you didn't record
+  BACKPORCH    — sounds produced, not wet
+  SWAY         — makes static tracks move like a band
+  VROOM        — the dirt pedal that lands in the mix
+  DAYDREAM     — one knob, warm tape to dream
+  FOFOPEDAL    — twelve characters, one MIX knob
+  DREAMRIPPER  — grunge and metal, amp in a box
 
 This installs the AU and VST3 plug-ins for all users
 (/Library/Audio/Plug-Ins). Restart your DAW afterwards.

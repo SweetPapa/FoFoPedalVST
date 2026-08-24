@@ -1,6 +1,6 @@
 # Sweet Papa Pedals
 
-Six free audio-effect pedals (VST3 / AU / Standalone) for indie-rock and bedroom-pop production, by **Sweet Papa Technologies**. Built with JUCE 8, designed around one rule: *every pedal is one opinionated sound with a handful of knobs that all matter.*
+Seven free audio-effect pedals (VST3 / AU / Standalone) for indie-rock, bedroom-pop and heavy production, by **Sweet Papa Technologies**. Built with JUCE 8, designed around one rule: *every pedal is one opinionated sound with a handful of knobs that all matter.*
 
 | Pedal | One-liner | Reach for it when… |
 |---|---|---|
@@ -10,6 +10,7 @@ Six free audio-effect pedals (VST3 / AU / Standalone) for indie-rock and bedroom
 | **VROOM** | The dirt pedal that lands in the mix | Tube warmth → crunch → fuzz → octave fuzz, with touch response |
 | **DAYDREAM** | One knob, from warm tape to dream | You want instant lo-fi/ambient character without a manual |
 | **FOFOPEDAL** | Twelve characters, one MIX knob | You want a produced sound fast: pick a character, ride MIX |
+| **DREAMRIPPER** | Grunge and metal, amp in a box | A DI guitar needs to be a rig — gate, gain stages and a speaker |
 
 All wet paths are high-passed, pre-delayed, and ducked where it counts — the mix hygiene is built in, not a settings page.
 
@@ -32,6 +33,7 @@ Run **`SweetPapaPedals-Setup.exe`** — installs the VST3s to `C:\Program Files\
 - **SWAY** — MOVE = total movement · RATE = speed · COLOR = flavour per mode (**Tape**: machine condition, from serviced deck to dying cassette · **Ensemble**: width · **Pump**: shape) · MIX = how much pedal. Modes: **Tape / Ensemble / Pump**. Tape is a real machine — saturation, head bump, gap loss, dropouts and hiss, not just a wobble. Start: Tape mode on keys, MOVE at noon.
 - **VROOM** — Four hero knobs: DRIVE / CHARACTER / TONE / LEVEL, four voices (**Smooth / Crunch / Fuzz / Octave**), source modes (**Electric / Acoustic / Bass**). DRIVE is loudness-compensated — it changes *texture*, not volume. The support row (Input/Body/Sag/Blend) is there when you want it; SAG makes the clipper respond to your picking.
 - **DAYDREAM** — One knob. 0–35% warm tape, 35–65% wobble and width, 65–100% shimmering near-infinite wash that ducks under your playing. That's the manual.
+- **DREAMRIPPER** — RIP = gain (loudness-compensated) · TIGHT = how much low end reaches the gain, flub → chug · SCOOP = mids pushed *into* the gain below 50, scooped *after* it above 50 · CAB = dark 4×12 → modern bright · LEVEL = master, 50 is unity. Support: GATE (with a lamp, so you can see it close) and MIX. Modes: **Sludge / Grunge / Metal / Djent** — four different amplifiers, not four tone stacks. Start: Grunge, defaults, on a DI guitar.
 - **FOFOPEDAL** — Pick one of 12 named characters (each is ONE vibe: *Front Porch* is a hall, *Dub Lounge* is a ping-pong tape echo, *Cassette Sunday* is a warbly cassette…). **MIX is "how much pedal"** — it scales the whole character, 0 = clean. The six block knobs are there for deeper tweaks.
 
 ## Building from source
@@ -40,7 +42,7 @@ Requirements: CMake ≥ 3.22, Xcode (macOS) or Visual Studio 2022 (Windows), Nod
 
 ```bash
 # 1. Build the UIs (once per UI change)
-for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui; do
+for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui dreamripper/ui; do
   (cd "$d" && npm install && npm run build)
 done
 
@@ -58,12 +60,20 @@ Plugins are copied to your user plug-in folders automatically after each build (
 
 **FoFoDriver** (`common/fofo/`) is the shared DSP kernel the pedals are built on. It exists to make a class of bug unrepresentable rather than merely fixed: a `Node` never sees dry signal, so it cannot mis-mix it; `Parallel` owns the dry snapshot, the latency compensation and the one canonical mix rule; and a single `ModMatrix` at a single control rate drives every modulation source. It provides a TPT/ZDF state variable filter with real resonance, cubic-Hermite fractional delays, a delay-line pitch shifter, a tape machine (hysteresis, head bump, gap loss, self-erasure, dropouts, hiss), early reflections feeding an eight-line FDN with per-band decay, and latency-reporting oversampled shapers.
 
-VROOM still uses the older header-only toolkit in `common/spt/` (`FableVerb`, ADAA primitives, tape hysteresis, a grain shifter, drifting LFOs). It was the least defective of the six and has not been ported yet.
+VROOM still uses the older header-only toolkit in `common/spt/` (`FableVerb`, ADAA primitives, tape hysteresis, a grain shifter, drifting LFOs). It was the least defective of the original six and has not been ported yet.
+
+DREAMRIPPER (`dreamripper/`) is the newest and the one built entirely out of kernel
+parts: `fofo::Parallel` owns its MIX and its dry-path alignment, one `fofo::Oversampled`
+node wraps the whole 2–3 stage gain cascade (so it is paid for once and its latency lands
+in the graph automatically), and the speaker is a `fofo::Svf` filter stack rather than an
+impulse response. Its level calibration — the RIP curve, the SCOOP makeup and the
+per-mode trims — is measured by the test suite on every build rather than dialled in
+by hand once.
 
 `tests/` holds the DSP test suite (`cmake --build build --target FOFO_TESTS`, then run
 `build/FOFO_TESTS_artefacts/Release/FOFO_TESTS`). It runs on every CI build and covers
-the kernel, SWAY's voicing calibration, and regression guards for defects that have
-shipped before.
+the kernel, SWAY's voicing calibration, DREAMRIPPER's level calibration and alias
+rejection, and regression guards for defects that have shipped before.
 
 ## License
 

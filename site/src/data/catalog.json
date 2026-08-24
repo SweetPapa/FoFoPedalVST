@@ -1,8 +1,8 @@
 {
   "site": {
     "name": "Sweet Papa Pedals",
-    "tagline": "Six free pedals for indie-rock production",
-    "description": "Free VST3 & AU audio plugins for indie rock and bedroom pop — vocal doubler, ducked reverb, tape wobble, saturation, ambient wash and a 12-character multi-FX. macOS & Windows. By Sweet Papa Technologies.",
+    "tagline": "Seven free pedals for indie-rock production",
+    "description": "Free VST3 & AU audio plugins for indie rock, bedroom pop, grunge and metal — vocal doubler, ducked reverb, tape wobble, saturation, ambient wash, a grunge/metal amp-in-a-box and a 12-character multi-FX. macOS & Windows. By Sweet Papa Technologies.",
     "url": "https://pedal.fofo.dev",
     "company": "Sweet Papa Technologies",
     "portfolio": {
@@ -21,7 +21,10 @@
       "lo-fi plugins free",
       "VST3 free download",
       "GarageBand audio units free",
-      "Sweet Papa Technologies"
+      "Sweet Papa Technologies",
+      "free metal amp sim VST",
+      "free grunge distortion plugin",
+      "amp sim free download"
     ],
     "installNotes": {
       "mac": "Download the .pkg, double-click, done — installs AU + VST3 for every DAW (GarageBand, Logic, Ableton, Reaper…). If macOS warns about the developer, right-click the pkg and choose Open.",
@@ -30,7 +33,7 @@
   },
   "bundle": {
     "name": "Sweet Papa Pedals — Complete Bundle",
-    "blurb": "All six pedals in one installer. Free.",
+    "blurb": "All seven pedals in one installer. Free.",
     "downloads": {
       "mac": "https://github.com/SweetPapa/FoFoPedalVST/releases/latest/download/SweetPapaPedals-macOS.pkg",
       "win": "https://github.com/SweetPapa/FoFoPedalVST/releases/latest/download/SweetPapaPedals-Windows-Setup.exe"
@@ -38,6 +41,71 @@
     "version": "0.1.0"
   },
   "pedals": [
+    {
+      "slug": "dreamripper",
+      "name": "DREAMRIPPER",
+      "tagline": "Grunge and metal, amp in a box",
+      "accent": "#ff2d55",
+      "status": "free",
+      "category": "Amp Sim / High Gain",
+      "short": "Four amplifiers — Sludge, Grunge, Metal, Djent — with a real noise gate, a tightening filter in front of the gain, cascaded stages and a speaker. Plug a DI in and it is already a rig.",
+      "long": [
+        "Most free distortion is one clipper you push a signal through. DREAMRIPPER is the whole rig: a stereo-linked noise gate in front, a resonant highpass that decides how much low end is even allowed to reach the gain, two or three cascaded gain stages with their own coupling filters between them, mid EQ on both sides of the distortion, and a speaker at the end. That arrangement — not the clip curve — is what makes an amp sound like an amp.",
+        "The four modes are four different amplifiers rather than four tone-stack presets: they change the number of gain stages, where the coupling filters sit, how asymmetric each stage is, and how much the power supply sags when you dig in. Sludge is a woolly, endless fuzz. Grunge is a cranked combo that cleans up when you roll the guitar back. Metal is fast and scooped. Djent is tight, gated and built for a drop-tuned low string.",
+        "RIP is loudness-compensated across its whole travel, the four modes are level-matched to each other, and so are all sixteen presets — so auditioning the bank is an audition, not a volume ride."
+      ],
+      "controls": [
+        {
+          "name": "RIP",
+          "desc": "Gain — loudness-compensated, so it changes texture, not volume"
+        },
+        {
+          "name": "TIGHT",
+          "desc": "How much low end reaches the gain: flub → chug"
+        },
+        {
+          "name": "SCOOP",
+          "desc": "Mids pushed into the gain, or scooped out after it"
+        },
+        {
+          "name": "CAB",
+          "desc": "Speaker, dark closed-back 4×12 → modern and bright"
+        },
+        {
+          "name": "LEVEL",
+          "desc": "The amp's master, 50 = unity, ±20 dB"
+        },
+        {
+          "name": "GATE",
+          "desc": "Noise gate threshold, with a lamp so you can see it close"
+        },
+        {
+          "name": "MIX",
+          "desc": "How much pedal — dial the dry back in under a bass"
+        }
+      ],
+      "modes": [
+        "Sludge",
+        "Grunge",
+        "Metal",
+        "Djent"
+      ],
+      "goodFor": [
+        "Rhythm guitar, drop-tuned or not",
+        "Leads that need to sit over a wall",
+        "Bass, with the dry kept underneath",
+        "Drums and synths that need wrecking"
+      ],
+      "keywords": [
+        "free metal amp sim VST",
+        "free grunge distortion plugin",
+        "high gain amp sim free",
+        "djent plugin free",
+        "free guitar amp VST3 AU",
+        "noise gate distortion plugin"
+      ],
+      "image": "/screenshots/dreamripper.png"
+    },
     {
       "slug": "double",
       "name": "DOUBLE",

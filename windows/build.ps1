@@ -1,4 +1,4 @@
-# build.ps1 - build all six pedals + the signed Windows installer.
+# build.ps1 - build all seven pedals + the signed Windows installer.
 # Run from the repo root on a Windows machine (e.g. Infinity):
 #
 #   powershell -ExecutionPolicy Bypass -File windows\build.ps1
@@ -18,12 +18,12 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
-$Plugins  = @("VROOM","DAYDREAM","FOFOPEDAL","DOUBLE","BACKPORCH","SWAY")
+$Plugins  = @("VROOM","DAYDREAM","FOFOPEDAL","DOUBLE","BACKPORCH","SWAY","DREAMRIPPER")
 $BuildDir = "build-win"
 $Version  = if ($env:VERSION) { $env:VERSION } else { "0.1.0" }
 
 Write-Host "== 1/4 Building plugin UIs ==" -ForegroundColor Cyan
-$uiDirs = @("ui","daydream/ui","fofopedal/ui","double/ui","backporch/ui","sway/ui")
+$uiDirs = @("ui","daydream/ui","fofopedal/ui","double/ui","backporch/ui","sway/ui","dreamripper/ui")
 foreach ($d in $uiDirs) {
     Push-Location $d
     if (-not (Test-Path "node_modules")) { npm install }

@@ -22,7 +22,7 @@
           />
         </div>
         <p class="sp-pedal-note">
-          Ships in the free Sweet Papa Pedals bundle (v{{ bundle.version }}) — one installer, all six pedals.
+          Ships in the free Sweet Papa Pedals bundle (v{{ bundle.version }}) — one installer, all seven pedals.
         </p>
 
         <figure class="sp-pedal-shot">

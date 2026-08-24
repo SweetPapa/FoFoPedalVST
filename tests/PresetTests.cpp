@@ -20,6 +20,7 @@
 #include "backporch/Source/presets/PresetBank.h"
 #include "double/Source/presets/PresetBank.h"
 #include "daydream/Source/presets/PresetBank.h"
+#include "dreamripper/Source/presets/PresetBank.h"
 
 #include <set>
 
@@ -253,6 +254,7 @@ void runPresetTests()
     checkBank ("BACKPORCH", bkpr::getFactoryPresets(),     3);
     checkBank ("DOUBLE",    dbl::getFactoryPresets(),      3);
     checkBank ("DAYDREAM",  daydream::getFactoryPresets(), 1);
+    checkBank ("DREAMRIPPER", drip::getFactoryPresets(),   4);
 
     // Every preset should set every knob, or stepping onto it leaves whatever
     // the previous one did to the parameters it forgot. The default preset is
@@ -261,6 +263,7 @@ void runPresetTests()
     checkDefaultPresetIsComplete ("BACKPORCH", bkpr::getFactoryPresets(),     bkpr::kDefaultPresetIndex,     5);
     checkDefaultPresetIsComplete ("DOUBLE",    dbl::getFactoryPresets(),      dbl::kDefaultPresetIndex,      5);
     checkDefaultPresetIsComplete ("DAYDREAM",  daydream::getFactoryPresets(), daydream::kDefaultPresetIndex, 1);
+    checkDefaultPresetIsComplete ("DREAMRIPPER", drip::getFactoryPresets(), drip::kDefaultPresetIndex, (size_t) drip::kNumParameters);
 
     // DAYDREAM is one knob, so its presets are only meaningful if they are
     // actually spread along it rather than clustered in one zone.

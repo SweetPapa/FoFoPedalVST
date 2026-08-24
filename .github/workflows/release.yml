@@ -35,7 +35,7 @@ jobs:
 
       - name: Build plugin UIs
         run: |
-          for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui; do
+          for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui dreamripper/ui; do
             (cd "$d" && npm ci && npm run build)
           done
 
@@ -44,7 +44,7 @@ jobs:
           # single-config generator on the runner — set the build type or
           # artefacts land outside the Release/ folder the packager expects
           cmake -B build -DCMAKE_BUILD_TYPE=Release
-          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY DREAMRIPPER; do
             cmake --build build --target "${t}_VST3" --config Release
             cmake --build build --target "${t}_AU"   --config Release
           done

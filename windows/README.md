@@ -29,7 +29,7 @@ $env:AZURE_CODESIGN_META = "C:\tools\TrustedSigning\metadata.json"
 powershell -ExecutionPolicy Bypass -File windows\build.ps1
 ```
 
-The script: builds the six React UIs → CMake/MSVC Release build of all six VST3s → signs each plugin binary → compiles the Inno Setup installer → signs the installer.
+The script: builds the seven React UIs → CMake/MSVC Release build of all seven VST3s → signs each plugin binary → compiles the Inno Setup installer → signs the installer.
 
 Leave the two env vars unset to produce an unsigned installer for local testing.
 

@@ -454,6 +454,74 @@ target_link_libraries(SWAY PRIVATE
     juce::juce_recommended_warning_flags
 )
 
+# ─── DREAMRIPPER (Series C) ───────────────────────────────────────────────────
+# Grunge and metal amplifier-in-a-box. Gate → resonant tight filter → 2-3
+# cascaded oversampled gain stages with their own coupling filters → mid EQ on
+# both sides of the distortion → speaker. Four modes are four amplifiers.
+juce_add_plugin(DREAMRIPPER
+    COMPANY_NAME              "Sweet Papa Technologies"
+    PLUGIN_MANUFACTURER_CODE  SwPa
+    PLUGIN_CODE               Drip
+    FORMATS                   VST3 AU Standalone
+    PRODUCT_NAME              "DREAMRIPPER"
+    BUNDLE_ID                 "com.sweetpapa.dreamripper"
+    DESCRIPTION               "Grunge & Metal Amp in a Box"
+    IS_SYNTH                  FALSE
+    NEEDS_MIDI_INPUT          FALSE
+    NEEDS_MIDI_OUTPUT         FALSE
+    IS_MIDI_EFFECT            FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD   TRUE
+    PLUGIN_NAME               "DREAMRIPPER"
+    AU_MAIN_TYPE              kAudioUnitType_Effect
+    VST3_CATEGORIES           Fx Distortion
+    NEEDS_WEBVIEW2            TRUE
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT    "DREAMRIPPER needs audio input to process your signal."
+    HARDENED_RUNTIME_ENABLED      TRUE
+    HARDENED_RUNTIME_OPTIONS      "com.apple.security.device.audio-input"
+)
+
+juce_generate_juce_header(DREAMRIPPER)
+
+juce_add_binary_data(DreamripperBinaryData
+    HEADER_NAME BinaryData.h
+    NAMESPACE BinaryData
+    SOURCES dreamripper/ui/dist/index.html
+)
+
+set_target_properties(DreamripperBinaryData PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
+target_sources(DREAMRIPPER PRIVATE
+    dreamripper/Source/PluginProcessor.cpp
+    dreamripper/Source/PluginEditor.cpp
+    dreamripper/Source/presets/PresetBank.cpp
+    dreamripper/Source/dsp/DreamRipperEngine.cpp
+)
+
+target_include_directories(DREAMRIPPER PRIVATE dreamripper/Source common)
+
+target_compile_definitions(DREAMRIPPER PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_REPORT_APP_USAGE=0
+    # Windows webview UIs: enables Options::withResourceProvider (links the
+    # static WebView2 loader found via JUCE_WEBVIEW2_PACKAGE_LOCATION)
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
+)
+
+target_link_libraries(DREAMRIPPER PRIVATE
+    DreamripperBinaryData
+    juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_dsp
+    juce::juce_gui_extra
+    PUBLIC
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_lto_flags
+    juce::juce_recommended_warning_flags
+)
+
 # ─── FoFoDriver test suite ────────────────────────────────────────────────────
 # Kernel behaviour plus permanent regression guards for the DSP defects fixed
 # in the Step 0 pass. Console app; returns non-zero on any failure so CI gates
@@ -469,12 +537,14 @@ target_sources(FOFO_TESTS PRIVATE
     tests/DoubleTests.cpp
     tests/DaydreamTests.cpp
     tests/FofopedalTests.cpp
+    tests/DreamRipperTests.cpp
     tests/PresetTests.cpp
     # The shipping preset banks, so the data is tested and not just the code.
     sway/Source/presets/PresetBank.cpp
     backporch/Source/presets/PresetBank.cpp
     double/Source/presets/PresetBank.cpp
     daydream/Source/presets/PresetBank.cpp
+    dreamripper/Source/presets/PresetBank.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp
@@ -488,6 +558,7 @@ target_sources(FOFO_TESTS PRIVATE
     fofopedal/Source/dsp/Pitch.cpp
     fofopedal/Source/dsp/Delay.cpp
     fofopedal/Source/dsp/Space.cpp
+    dreamripper/Source/dsp/DreamRipperEngine.cpp
 )
 
 target_include_directories(FOFO_TESTS PRIVATE common tests .)
