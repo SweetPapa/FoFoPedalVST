@@ -49,6 +49,25 @@ jobs:
             cmake --build build --target "${t}_AU"   --config Release
           done
 
+      # The .pkg is what users actually install, so the architecture check
+      # belongs here too and not only in build.yml — a tag builds on its own
+      # and would otherwise ship past that gate. See the CMAKE_OSX_ARCHITECTURES
+      # comment in CMakeLists.txt for what this is guarding against.
+      - name: Verify macOS binaries are universal
+        run: |
+          fail=0
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY DREAMRIPPER; do
+            for b in "build/${t}_artefacts/Release/VST3/${t}.vst3/Contents/MacOS/${t}" \
+                     "build/${t}_artefacts/Release/AU/${t}.component/Contents/MacOS/${t}"; do
+              archs=$(lipo -archs "$b")
+              case "$archs" in
+                *arm64*x86_64*|*x86_64*arm64*) echo "ok   $t $(basename "$(dirname "$(dirname "$(dirname "$b")")")"): $archs" ;;
+                *) echo "FAIL $b: $archs"; fail=1 ;;
+              esac
+            done
+          done
+          exit $fail
+
       - name: Import signing certificates
         if: env.HAVE_APPLE_CERTS == 'true'
         env:
