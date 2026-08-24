@@ -118,6 +118,24 @@ jobs:
             fi
           done
 
+      # The universal-binary setting failed silently once already: a local
+      # Xcode build stayed fat while every shipped macOS binary was arm64-only,
+      # so nothing on a developer machine could reveal it. Check the artifact
+      # itself rather than trusting the configure step.
+      - name: Verify macOS binaries are universal
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          fail=0
+          for b in out/*.vst3/Contents/MacOS/* out/*.component/Contents/MacOS/*; do
+            archs=$(lipo -archs "$b")
+            case "$archs" in
+              *arm64*x86_64*|*x86_64*arm64*) echo "ok   $(basename "$b"): $archs" ;;
+              *) echo "FAIL $(basename "$b"): $archs"; fail=1 ;;
+            esac
+          done
+          exit $fail
+
       - uses: actions/upload-artifact@v4
         with:
           name: sweet-papa-pedals-${{ matrix.name }}
