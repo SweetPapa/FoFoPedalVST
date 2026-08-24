@@ -2,6 +2,7 @@ import FitScale from './components/FitScale.jsx';
 import ResizeHandle from './components/ResizeHandle.jsx';
 import React, { useEffect, useState } from 'react';
 import BigKnob from './components/BigKnob.jsx';
+import PresetStepper from './components/PresetStepper.jsx';
 import Meter from './components/Meter.jsx';
 import { isJuceHost } from './juceBridge.js';
 
@@ -32,7 +33,7 @@ export default function App() {
 
   return (
     <>
-    <FitScale designWidth={520} designHeight={460} background="#10081f">
+    <FitScale designWidth={520} designHeight={490} background="#10081f">
     <div className="relative w-full h-full flex flex-col text-dream-ink overflow-hidden">
       {/* Base layer */}
       <div className="absolute inset-0 bg-dream-deeper" />
@@ -60,8 +61,8 @@ export default function App() {
 
       {/* Foreground */}
       <div className="relative flex flex-col h-full">
-        <header className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 border-b border-dream-edge/60">
-          <div className="flex items-baseline gap-3">
+        <header className="px-6 pt-4 pb-3 flex items-center gap-5 border-b border-dream-edge/60">
+          <div className="flex flex-col shrink-0">
             <h1 className="text-2xl font-extrabold tracking-[0.4em]"
                 style={{
                   background: 'linear-gradient(90deg, #4cdef0, #c084ff, #ff8ad3)',
@@ -70,33 +71,31 @@ export default function App() {
                 }}>
               DAYDREAM
             </h1>
-            <span className="text-[10px] uppercase tracking-[0.35em] text-dream-dim">
+            <span className="text-[10px] uppercase tracking-[0.35em] text-dream-dim mt-1.5 whitespace-nowrap">
               Sweet Papa Tech
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex-1 flex flex-col items-end gap-1.5">
             <Meter label="In"  level={levels.in} />
             <Meter label="Out" level={levels.out} />
           </div>
-          <span className="text-[10px] uppercase tracking-widest text-dream-dim">
-            {isJuceHost ? 'plugin' : 'preview'} · v0.1
-          </span>
         </header>
 
-        <main className="flex-1 flex items-center justify-center">
+        <main className="flex-1 flex flex-col items-center justify-center gap-3">
           <div className="animate-drift">
-            <BigKnob paramId="dream" label="Dream" size={260} />
+            <BigKnob paramId="dream" label="Dream" size={252} />
           </div>
+          <PresetStepper accent="#c084ff" />
         </main>
 
         <footer className="px-6 py-3 border-t border-dream-edge/60 text-[10px] text-dream-dim flex justify-between">
           <span>tape sat · pitch drift · chorus · slap · shimmer reverb</span>
-          <span>turn it up · made for FoFo</span>
+          <span>turn it up · made for FoFo · {isJuceHost ? 'plugin' : 'preview'} · v0.1</span>
         </footer>
       </div>
     </div>
     </FitScale>
-    <ResizeHandle minWidth={380} minHeight={336} />
+    <ResizeHandle minWidth={380} minHeight={358} />
     </>
   );
 }

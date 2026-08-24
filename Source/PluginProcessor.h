@@ -57,10 +57,13 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // The host's program list mirrors the factory bank the PresetManager
+    // already owns. User presets deliberately stay out of it: the list has to
+    // be stable for the host, and the user's folder can change under us.
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -121,6 +124,9 @@ private:
     juce::SmoothedValue<float> blendSmoothed      { 0.7f };
 
     vroom::PresetManager presetManager { apvts };
+
+    // Which factory slot the host should report while a user preset is live.
+    int lastFactoryProgram { 0 };
 
     juce::AudioBuffer<float> dryBuffer;
     juce::AudioBuffer<float> lowsBuffer;  // bass-mode clean low band

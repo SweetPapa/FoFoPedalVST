@@ -48,6 +48,20 @@ SwayAudioProcessorEditor::getResource (const juce::String& url) const
     return std::nullopt;
 }
 
+juce::var SwayAudioProcessorEditor::buildPresetStateVar() const
+{
+    auto& presets = processorRef.getPresets();
+    const int index = presets.getCurrentProgram();
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty ("name",     presets.getProgramName (index));
+    obj->setProperty ("blurb",    presets.getProgramBlurb (index));
+    obj->setProperty ("index",    index);
+    obj->setProperty ("count",    presets.getNumPrograms());
+    obj->setProperty ("modified", presets.isModified());
+    return juce::var (obj);
+}
+
 SwayAudioProcessorEditor::SwayAudioProcessorEditor (SwayAudioProcessor& p)
     : juce::AudioProcessorEditor (&p),
       processorRef (p),
@@ -75,6 +89,21 @@ SwayAudioProcessorEditor::SwayAudioProcessorEditor (SwayAudioProcessor& p)
                                setSize (juce::jlimit (560, 1400, (int) args[0]),
                                         juce::jlimit (360, 900, (int) args[1]));
                            completion ({});
+                       })
+                   .withNativeFunction (
+                       juce::Identifier ("stepPreset"),
+                       [this] (const juce::Array<juce::var>& args,
+                               juce::WebBrowserComponent::NativeFunctionCompletion completion)
+                       {
+                           processorRef.getPresets().step (args.size() > 0 ? (int) args[0] : 1);
+                           completion (buildPresetStateVar());
+                       })
+                   .withNativeFunction (
+                       juce::Identifier ("getPresetState"),
+                       [this] (const juce::Array<juce::var>&,
+                               juce::WebBrowserComponent::NativeFunctionCompletion completion)
+                       {
+                           completion (buildPresetStateVar());
                        }))
 {
     addAndMakeVisible (webView);
@@ -115,4 +144,18 @@ void SwayAudioProcessorEditor::timerCallback()
     obj->setProperty ("in",  displayedInputPeak);
     obj->setProperty ("out", displayedOutputPeak);
     webView.emitEventIfBrowserIsVisible ("audioLevels", juce::var (obj));
+
+    // The preset can change from the host as well as from our own header, so
+    // the UI is told about it here rather than only when it asks.
+    auto& presets = processorRef.getPresets();
+    const auto name     = presets.getProgramName (presets.getCurrentProgram());
+    const bool modified = presets.isModified();
+
+    if (! havePushedPresetState || name != lastEmittedPresetName || modified != lastEmittedModified)
+    {
+        webView.emitEventIfBrowserIsVisible ("presetState", buildPresetStateVar());
+        lastEmittedPresetName = name;
+        lastEmittedModified   = modified;
+        havePushedPresetState = true;
+    }
 }

@@ -8,3 +8,5 @@ void runBackporchTests();
 void runDoubleTests();
 void runDaydreamTests();
 void runFofopedalTests();
+void runDreamRipperTests();
+void runPresetTests();

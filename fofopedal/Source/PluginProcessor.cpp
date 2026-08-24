@@ -357,6 +357,35 @@ void FofopedalAudioProcessor::handleAsyncUpdate()
     loadInProgress.store (false);
 }
 
+int FofopedalAudioProcessor::getNumPrograms()
+{
+    return (int) CharacterBank::kFactoryPresets.size();
+}
+
+int FofopedalAudioProcessor::getCurrentProgram()
+{
+    if (auto* p = apvts.getParameter (ParamID::characterPreset))
+        return (int) std::round (p->convertFrom0to1 (p->getValue()));
+
+    return 0;
+}
+
+void FofopedalAudioProcessor::setCurrentProgram (int index)
+{
+    // Hosts re-assert the current program after restoring a session; letting
+    // that through would re-apply the character over the user's own edits.
+    if (index == getCurrentProgram()) return;
+
+    applyCharacterPresetByIndex (index);
+}
+
+const juce::String FofopedalAudioProcessor::getProgramName (int index)
+{
+    if (index < 0 || index >= getNumPrograms()) return {};
+
+    return CharacterBank::kFactoryPresets[(size_t) index].name;
+}
+
 void FofopedalAudioProcessor::applyCharacterPresetByIndex (int idx)
 {
     if (idx < 0 || idx >= (int) CharacterBank::kFactoryPresets.size()) return;

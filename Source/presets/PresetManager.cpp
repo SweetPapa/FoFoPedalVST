@@ -149,16 +149,20 @@ const std::vector<Preset>& PresetManager::getFactoryDefaults()
         v.push_back (make ("Velvet OD",        "Smooth", "Electric", "Smooth", 34, 65, 45, 60, 25, 90,  1.0f, "1x12 Warm"));
         v.push_back (make ("Acoustic Warmth",  "Smooth", "Acoustic", "Smooth", 24, 80, 40, 70, 15, 45,  0.0f, "Full-Range / DI"));
         v.push_back (make ("Acoustic Body",    "Smooth", "Acoustic", "Smooth", 20, 70, 70, 62, 10, 40,  1.0f, "Full-Range / DI"));
+        v.push_back (make ("Bass Warmth",      "Smooth", "Bass",     "Smooth", 26, 70, 60, 52, 15, 45,  0.0f, "Full-Range / DI"));
 
         // 🪨 CRUNCH — classic mid-driven distortion
         v.push_back (make ("Vroom",            "Crunch", "Electric", "Crunch", 45, 70, 65, 45, 40, 100,  0.0f, "1x12 Warm"));
         v.push_back (make ("Crunch",           "Crunch", "Electric", "Crunch", 60, 45, 50, 55, 35, 100,  0.0f, "4x12 Modern"));
         v.push_back (make ("Garage Rock",      "Crunch", "Electric", "Crunch", 55, 55, 58, 52, 40, 100,  0.0f, "4x12 Modern"));
+        v.push_back (make ("Acoustic Grit",    "Crunch", "Acoustic", "Crunch", 42, 60, 45, 58, 20, 50,  0.0f, "Full-Range / DI"));
 
         // 🎸 LEAD — singing, sustaining, expressive
         v.push_back (make ("Lead Bloom",       "Lead",   "Electric", "Smooth", 70, 75, 60, 42, 65, 100,  2.0f, "1x12 Warm"));
         v.push_back (make ("Soaring Lead",     "Lead",   "Electric", "Smooth", 60, 80, 55, 50, 75, 100,  3.0f, "1x12 Warm"));
         v.push_back (make ("Wail",             "Lead",   "Electric", "Octave", 75, 60, 50, 55, 70, 100,  2.0f, "1x12 Warm"));
+        v.push_back (make ("Acoustic Lead",    "Lead",   "Acoustic", "Smooth", 50, 75, 50, 55, 45, 55,  2.0f, "Full-Range / DI"));
+        v.push_back (make ("Bass Lead",        "Lead",   "Bass",     "Smooth", 58, 70, 55, 55, 55, 60,  1.0f, "Full-Range / DI"));
 
         // 🔥 FUZZ — gnarly, harmonically dense
         v.push_back (make ("Stacked Wall",     "Fuzz",   "Electric", "Fuzz",   85, 30, 60, 40, 55, 100, -1.0f, "4x12 Modern"));

@@ -65,7 +65,7 @@ export default function CabSection() {
 
   return (
     <div className="px-6 py-3 border-t border-vroom-edge flex items-center gap-4 flex-wrap">
-      <span className="text-[10px] uppercase tracking-[0.3em] text-vroom-dim w-12 shrink-0">
+      <span className="text-[10px] uppercase tracking-[0.3em] text-vroom-dim shrink-0">
         Cabinet
       </span>
 

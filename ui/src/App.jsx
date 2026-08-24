@@ -64,8 +64,8 @@ export default function App() {
       {/* Foreground */}
       <div className="relative flex flex-col h-full">
         <header className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 border-b border-vroom-edge backdrop-blur-sm">
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-3xl font-extrabold tracking-[0.25em]"
+          <div className="flex flex-col shrink-0">
+            <h1 className="text-3xl font-extrabold tracking-[0.25em] leading-none"
                 style={{
                   background: 'linear-gradient(90deg, #ff5050, #ffaa3c, #ffd040, #4cdef0, #a55aff, #ff5aa3)',
                   WebkitBackgroundClip: 'text',
@@ -73,17 +73,14 @@ export default function App() {
                 }}>
               VROOM
             </h1>
-            <span className="text-[10px] uppercase tracking-[0.3em] text-vroom-dim">
+            <span className="text-[10px] uppercase tracking-[0.3em] text-vroom-dim mt-1.5 whitespace-nowrap">
               Sweet Papa Tech
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex-1 flex items-center justify-end gap-4">
             <ModeSelector />
             <VoiceSelector />
           </div>
-          <span className="text-[10px] uppercase tracking-widest text-vroom-dim">
-            {isJuceHost ? 'plugin' : 'dev preview'} · v0.1
-          </span>
         </header>
 
         <PresetBar />
@@ -113,8 +110,8 @@ export default function App() {
         <CabSection />
 
         <footer className="px-6 py-2 border-t border-vroom-edge text-[10px] text-vroom-dim flex justify-between">
-          <span>4 voices · source-aware · 16 factory presets</span>
-          <span>made for FoFo · v0.1.0</span>
+          <span>4 voices · source-aware · 20 factory presets</span>
+          <span>made for FoFo · {isJuceHost ? 'plugin' : 'dev preview'} · v0.1.0</span>
         </footer>
       </div>
     </div>

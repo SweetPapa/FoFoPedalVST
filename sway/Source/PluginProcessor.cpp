@@ -8,6 +8,21 @@ namespace
 {
     constexpr int kParamVersionHint = 1;
 
+    // The pedal boots on its default preset, so the preset bank is the single
+    // source of that truth and the parameter defaults are read back out of it.
+    // Hard-coding them here as well is how the two silently drift apart.
+    float defaultFor (const char* id)
+    {
+        const auto& preset = sway::getFactoryPresets()[(size_t) sway::kDefaultPresetIndex];
+
+        for (const auto& value : preset.values)
+            if (juce::String (value.paramId) == id)
+                return value.value;
+
+        jassertfalse; // the default preset is missing a parameter
+        return 0.0f;
+    }
+
     std::unique_ptr<juce::AudioParameterFloat> pct (const char* id, const char* name, float def)
     {
         return std::make_unique<juce::AudioParameterFloat>(
@@ -21,13 +36,14 @@ namespace
 APVTS::ParameterLayout SwayAudioProcessor::createParameterLayout()
 {
     APVTS::ParameterLayout layout;
-    layout.add (pct (ParamID::move, "Move", 45.0f));
-    layout.add (pct (ParamID::rate,  "Rate",  35.0f));
-    layout.add (pct (ParamID::color, "Color", 50.0f));
-    layout.add (pct (ParamID::mix,   "Mix",   100.0f));
+    layout.add (pct (ParamID::move, "Move", defaultFor (ParamID::move)));
+    layout.add (pct (ParamID::rate,  "Rate",  defaultFor (ParamID::rate)));
+    layout.add (pct (ParamID::color, "Color", defaultFor (ParamID::color)));
+    layout.add (pct (ParamID::mix,   "Mix",   defaultFor (ParamID::mix)));
     layout.add (std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { ParamID::mode, kParamVersionHint }, "Mode",
-        juce::StringArray { "Tape", "Ensemble", "Pump" }, 0));
+        juce::StringArray { "Tape", "Ensemble", "Pump" },
+        (int) defaultFor (ParamID::mode)));
     return layout;
 }
 
@@ -35,7 +51,8 @@ SwayAudioProcessor::SwayAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
                               .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                               .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts (*this, nullptr, juce::Identifier ("SWAY"), createParameterLayout())
+      apvts (*this, nullptr, juce::Identifier ("SWAY"), createParameterLayout()),
+      presets (*this, apvts, sway::getFactoryPresets(), sway::kDefaultPresetIndex)
 {
     moveParam = apvts.getRawParameterValue (ParamID::move);
     rateParam  = apvts.getRawParameterValue (ParamID::rate);
@@ -102,8 +119,16 @@ void SwayAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 void SwayAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         if (xml->hasTagName (apvts.state.getType()))
+        {
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+            // The values are back; this recovers which preset name to show
+            // and re-baselines the edited marker against them.
+            presets.restoreIndexFromState();
+        }
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

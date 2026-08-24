@@ -36,6 +36,13 @@ private:
 
     juce::WebBrowserComponent webView;
 
+    // Preset name/edited state pushed to the web UI's header stepper.
+    juce::var buildPresetStateVar() const;
+
+    juce::String lastEmittedPresetName;
+    bool         lastEmittedModified { false };
+    bool         havePushedPresetState { false };
+
     float displayedInputPeak  { 0.0f };
     float displayedOutputPeak { 0.0f };
 

@@ -51,7 +51,7 @@ export default function App() {
 
   return (
     <>
-    <FitScale designWidth={980} designHeight={800} background="#f3ecdd">
+    <FitScale designWidth={980} designHeight={640} background="#f3ecdd">
     <div className="relative w-full h-full text-paper-ink overflow-hidden paper-grain bg-paper">
       {/* Foreground */}
       <div className="relative flex flex-col h-full">
@@ -87,15 +87,15 @@ export default function App() {
         </section>
 
         {/* Six big knobs */}
-        <section className="flex-1 px-6 py-6 flex flex-col">
-          <div className="flex items-start justify-between gap-3">
+        <section className="flex-1 px-6 py-6 flex flex-col justify-center">
+          <div className="flex items-start justify-between gap-2">
             {/* CHARACTER */}
-            <div className="flex flex-col items-center gap-3 w-[14%]">
+            <div className="flex flex-col items-center gap-3 shrink-0">
               <BigKnob paramId="character" label="Character" accent="terracotta" defaultNormalised={0.25} />
             </div>
 
             {/* DRIVE */}
-            <div className="flex flex-col items-center gap-3 w-[16%]">
+            <div className="flex flex-col items-center gap-3 shrink-0">
               <BigKnob paramId="drive" label="Drive" accent="terracotta" defaultNormalised={0.20} />
               <SegmentedToggle
                 paramId="driveType"
@@ -105,7 +105,7 @@ export default function App() {
             </div>
 
             {/* SHAPE */}
-            <div className="flex flex-col items-center gap-3 w-[18%]">
+            <div className="flex flex-col items-center gap-3 shrink-0">
               <BigKnob paramId="shape" label="Shape" accent="mustard" defaultNormalised={0.5} />
               <div className="flex flex-col gap-1.5">
                 <SegmentedToggle
@@ -122,7 +122,7 @@ export default function App() {
             </div>
 
             {/* TIME */}
-            <div className="flex flex-col items-center gap-3 w-[16%]">
+            <div className="flex flex-col items-center gap-3 shrink-0">
               <BigKnob
                 paramId="timeMs"
                 label="Time"
@@ -138,7 +138,7 @@ export default function App() {
             </div>
 
             {/* SPACE */}
-            <div className="flex flex-col items-center gap-3 w-[18%]">
+            <div className="flex flex-col items-center gap-3 shrink-0">
               <BigKnob paramId="space" label="Space" accent="sage" defaultNormalised={0.30} />
               <SegmentedToggle
                 paramId="spaceType"
@@ -148,7 +148,7 @@ export default function App() {
             </div>
 
             {/* MIX */}
-            <div className="flex flex-col items-center gap-3 w-[14%]">
+            <div className="flex flex-col items-center gap-3 shrink-0">
               <BigKnob paramId="mix" label="Mix" accent="ink" defaultNormalised={0.30} />
             </div>
           </div>
@@ -187,7 +187,7 @@ export default function App() {
       </div>
     </div>
     </FitScale>
-    <ResizeHandle minWidth={640} minHeight={522} />
+    <ResizeHandle minWidth={640} minHeight={418} />
     </>
   );
 }

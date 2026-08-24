@@ -15,6 +15,11 @@ function isComboLive(name) {
   return Array.isArray(combos) && combos.includes(name);
 }
 
+function isFunctionLive(name) {
+  const fns = window.__JUCE__?.initialisationData?.__juce__functions;
+  return Array.isArray(fns) && fns.includes(name);
+}
+
 const hasJuceGlobal = typeof window !== 'undefined' && !!window.__JUCE__;
 
 function mockSlider(initial = 0.35) {
@@ -69,3 +74,67 @@ export function getComboState(name, fallbackChoices = ['A','B','C']) {
 }
 
 export const isJuceHost = hasJuceGlobal;
+
+// ── Presets ──────────────────────────────────────────────────────────────────
+// The bank lives in C++ (Source/presets/PresetBank.cpp) and reaches the UI over
+// the native bridge. This mirror exists only so the browser dev preview can
+// step through the same names; in a host, every value below is replaced by
+// what the plugin sends.
+const MOCK_PRESETS = [
+  { name: 'Gentle Drift', blurb: "barely-there movement, for things that shouldn't sound processed" },
+  { name: 'Tape Wobble', blurb: 'the default sway — a tired machine playing your track back' },
+  { name: 'Warped Cassette', blurb: 'a tape that has been left in the car; pitch never settles' },
+  { name: 'Slow Chorus', blurb: 'wide and unhurried under a clean guitar or a pad' },
+  { name: 'Lush Ensemble', blurb: "several voices' worth of width without a pitch shifter" },
+  { name: 'Vibrato', blurb: 'fast and deep with the dry gone — the sound leaves the centre' },
+  { name: 'Breathing Pad', blurb: 'long swells that lean on the beat rather than chop it' },
+  { name: 'Sidechain Pump', blurb: 'the four-on-the-floor duck, without routing a compressor' }
+];
+
+function mockPresetState(index) {
+  const p = MOCK_PRESETS[index] ?? MOCK_PRESETS[0];
+  return { name: p.name, blurb: p.blurb, index, count: MOCK_PRESETS.length, modified: false };
+}
+
+let mockPresetIndex = 1;
+const mockPresetListeners = new Set();
+
+// Ask the plugin which preset is loaded. Falls back to the mirror above when
+// there is no host.
+export async function fetchPresetState() {
+  const fn = isFunctionLive('getPresetState') ? Juce.getNativeFunction('getPresetState') : null;
+  if (!fn) return mockPresetState(mockPresetIndex);
+  try {
+    return await fn();
+  } catch {
+    return mockPresetState(mockPresetIndex);
+  }
+}
+
+// Move one preset forwards (+1) or backwards (-1), wrapping at both ends.
+export async function stepPreset(direction) {
+  const fn = isFunctionLive('stepPreset') ? Juce.getNativeFunction('stepPreset') : null;
+  if (!fn) {
+    const n = MOCK_PRESETS.length;
+    mockPresetIndex = ((mockPresetIndex + (direction >= 0 ? 1 : -1)) % n + n) % n;
+    const state = mockPresetState(mockPresetIndex);
+    mockPresetListeners.forEach((cb) => cb(state));
+    return state;
+  }
+  try {
+    return await fn(direction);
+  } catch {
+    return null;
+  }
+}
+
+// Subscribe to preset changes, including ones the host makes behind our back.
+export function onPresetState(handler) {
+  const backend = isFunctionLive('getPresetState') ? window.__JUCE__?.backend : null;
+  if (!backend) {
+    mockPresetListeners.add(handler);
+    return () => mockPresetListeners.delete(handler);
+  }
+  const token = backend.addEventListener('presetState', handler);
+  return () => backend.removeEventListener(token);
+}

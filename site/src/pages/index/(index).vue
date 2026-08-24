@@ -4,11 +4,11 @@
     <section class="sp-hero">
       <div class="sp-hero-inner">
         <h1 class="sp-hero-title">
-          Six <em>free</em> pedals for<br />indie-rock production.
+          Seven <em>free</em> pedals for<br />indie-rock production.
         </h1>
         <p class="sp-hero-sub">
           A vocal doubler, a reverb that never swamps, tape wobble, touch-responsive dirt,
-          a one-knob dream machine, and a twelve-character multi-FX.
+          a one-knob dream machine, a grunge-and-metal amp in a box, and a twelve-character multi-FX.
           <strong>VST3 + AU · macOS &amp; Windows · actually free.</strong>
         </p>
         <div class="sp-hero-cta">
@@ -30,7 +30,7 @@
           />
         </div>
         <p class="sp-hero-note">
-          One installer, all six pedals, v{{ bundle.version }}. No account, no email, no trial timer.
+          One installer, all seven pedals, v{{ bundle.version }}. No account, no email, no trial timer.
         </p>
       </div>
     </section>
@@ -71,8 +71,8 @@
       <h2 class="sp-section-title">Why these exist</h2>
       <p>
         Most free plugins are either feature racks you have to engineer, or toys that fall apart
-        in a mix. These six are built the way the beloved character pedals are built: one clear
-        identity each, four knobs that all do something, defaults that sound right on insert,
+        in a mix. These seven are built the way the beloved character pedals are built: one clear
+        identity each, a handful of knobs that all do something, defaults that sound right on insert,
         and wet paths that stay out of your vocal's way. Made by
         <a :href="site.portfolio.url" target="_blank" rel="noopener">{{ site.company }}</a>
         for real indie-rock and bedroom-pop sessions — and shared free while the premium line grows.

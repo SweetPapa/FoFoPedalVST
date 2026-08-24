@@ -1,4 +1,4 @@
-# Builds all six pedals for macOS and Windows on every push/PR to main.
+# Builds all seven pedals for macOS and Windows on every push/PR to main.
 # Artifacts are unsigned — signing happens locally (Azure Trusted Signing on
 # Windows via windows/build.ps1; Apple Developer ID via
 # scripts/build-installer-macos.sh once an identity exists).
@@ -32,6 +32,7 @@ jobs:
               - 'double/**'
               - 'backporch/**'
               - 'sway/**'
+              - 'dreamripper/**'
               - 'ui/**'
               - 'Resources/**'
               - 'tests/**'
@@ -61,7 +62,7 @@ jobs:
       - name: Build plugin UIs
         shell: bash
         run: |
-          for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui; do
+          for d in ui daydream/ui fofopedal/ui double/ui backporch/ui sway/ui dreamripper/ui; do
             (cd "$d" && npm ci && npm run build)
           done
 
@@ -89,7 +90,7 @@ jobs:
       - name: Build (Release)
         shell: bash
         run: |
-          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY DREAMRIPPER; do
             cmake --build build --target "${t}_VST3" --config Release
             if [ "${{ matrix.name }}" = "macos" ]; then
               cmake --build build --target "${t}_AU" --config Release
@@ -110,12 +111,30 @@ jobs:
         shell: bash
         run: |
           mkdir -p out
-          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY; do
+          for t in VROOM DAYDREAM FOFOPEDAL DOUBLE BACKPORCH SWAY DREAMRIPPER; do
             cp -R "build/${t}_artefacts/Release/VST3/${t}.vst3" out/
             if [ "${{ matrix.name }}" = "macos" ]; then
               cp -R "build/${t}_artefacts/Release/AU/${t}.component" out/
             fi
           done
+
+      # The universal-binary setting failed silently once already: a local
+      # Xcode build stayed fat while every shipped macOS binary was arm64-only,
+      # so nothing on a developer machine could reveal it. Check the artifact
+      # itself rather than trusting the configure step.
+      - name: Verify macOS binaries are universal
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          fail=0
+          for b in out/*.vst3/Contents/MacOS/* out/*.component/Contents/MacOS/*; do
+            archs=$(lipo -archs "$b")
+            case "$archs" in
+              *arm64*x86_64*|*x86_64*arm64*) echo "ok   $(basename "$b"): $archs" ;;
+              *) echo "FAIL $(basename "$b"): $archs"; fail=1 ;;
+            esac
+          done
+          exit $fail
 
       - uses: actions/upload-artifact@v4
         with:
