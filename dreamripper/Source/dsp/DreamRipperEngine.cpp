@@ -107,10 +107,8 @@ void DreamRipperEngine::buildGraph()
 
     chain->add (fofo::makeFnNode ([this] (juce::AudioBuffer<float>& b, int n) { frontEnd (b, n); }));
 
-    auto os = std::make_unique<fofo::Oversampled> (
-        [this] (float x, int ch) { return cascadeSample (x, ch); }, kOsPower);
-    cascade = os.get();
-    chain->add (std::move (os));
+    chain->add (std::make_unique<fofo::Oversampled> (
+        [this] (float x, int ch) { return cascadeSample (x, ch); }, kOsPower));
 
     chain->add (fofo::makeFnNode ([this] (juce::AudioBuffer<float>& b, int n) { backEnd (b, n); }));
 

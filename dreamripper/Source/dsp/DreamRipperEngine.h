@@ -107,9 +107,6 @@ public:
         recalc();
     }
 
-    bool isActive() const noexcept { return active; }
-    float currentGain() const noexcept { return gain; }
-
     // One sample. `key` is the stereo-linked detector input; the caller applies
     // the returned gain to both channels.
     inline float processGain (float key) noexcept
@@ -286,8 +283,9 @@ private:
     float preGain  { 1.0f };
     float postGain { 1.0f };
 
+    // The whole pedal: Parallel(Chain(front end, oversampled cascade, back end)).
+    // Built once in prepare(), which is also the only place that allocates.
     std::unique_ptr<fofo::Parallel> graph;
-    fofo::Oversampled* cascade { nullptr };
 
     int reportedLatency { 0 };
 
