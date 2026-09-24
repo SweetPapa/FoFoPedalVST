@@ -17,7 +17,7 @@ const std::array<CharacterPreset, 12> CharacterBank::kFactoryPresets = {{
     // 1 — Front Porch (Acoustic guitar / piano): a hall, nothing else.
     { "Front Porch",
       /*voicing*/ 3,
-      /*char*/ 18.0f, /*drive*/  0.0f, /*shape*/ 30.0f, /*time*/ 350.0f, /*space*/ 45.0f, /*mix*/ 70.0f,
+      /*char*/ 18.0f, /*drive*/  0.0f, /*shape*/ 30.0f, /*time*/ 350.0f, /*space*/ 55.0f, /*mix*/ 78.0f,
       /*drvT*/0,/*modT*/0,/*pchT*/0,/*dlyT*/0,/*spcT*/1 /*Hall*/,
       /*charOff*/false, /*drvOff*/true,/*modOff*/true,/*pchOff*/true,/*dlyOff*/true,/*spcOff*/false,
       /*lowCut*/ 28.0f, /*drvTone*/50.0f,/*drvMix*/100.0f,
@@ -82,7 +82,7 @@ const std::array<CharacterPreset, 12> CharacterBank::kFactoryPresets = {{
     // 6 — Nylon Velvet (Acoustic / classical): a small room, full stop.
     { "Nylon Velvet",
       /*voicing*/ 3,
-      /*char*/ 15.0f,/*drive*/  0.0f,/*shape*/ 20.0f,/*time*/ 250.0f,/*space*/ 30.0f,/*mix*/ 60.0f,
+      /*char*/ 15.0f,/*drive*/  0.0f,/*shape*/ 20.0f,/*time*/ 250.0f,/*space*/ 45.0f,/*mix*/ 75.0f,
       /*drvT*/0,/*modT*/0,/*pchT*/0,/*dlyT*/0,/*spcT*/2 /*Room*/,
       /*charOff*/false,/*drvOff*/true,/*modOff*/true,/*pchOff*/true,/*dlyOff*/true,/*spcOff*/false,
       /*lowCut*/ 30.0f,/*drvTone*/50.0f,/*drvMix*/100.0f,
@@ -108,10 +108,10 @@ const std::array<CharacterPreset, 12> CharacterBank::kFactoryPresets = {{
     // 8 — Pillow Bass: low tape squash + a breath of room. Subs stay clean.
     { "Pillow Bass",
       /*voicing*/ 2,
-      /*char*/ 25.0f,/*drive*/ 18.0f,/*shape*/ 15.0f,/*time*/ 200.0f,/*space*/ 20.0f,/*mix*/ 70.0f,
+      /*char*/ 25.0f,/*drive*/ 40.0f,/*shape*/ 15.0f,/*time*/ 200.0f,/*space*/ 28.0f,/*mix*/ 75.0f,
       /*drvT*/1 /*Tape*/,/*modT*/0,/*pchT*/0,/*dlyT*/0,/*spcT*/2 /*Room*/,
       /*charOff*/false,/*drvOff*/false,/*modOff*/true,/*pchOff*/true,/*dlyOff*/true,/*spcOff*/false,
-      /*lowCut*/ 20.0f,/*drvTone*/45.0f,/*drvMix*/ 65.0f,
+      /*lowCut*/ 20.0f,/*drvTone*/45.0f,/*drvMix*/ 85.0f,
       /*modRate*/15,/*modDep*/20,/*modFb*/10,/*modMix*/15,
       /*pchAmt*/0,/*pchShp*/50,/*pchMix*/0,
       /*dlyFb*/  15.0f,/*dlyHf*/  55.0f,/*pp*/false,
@@ -134,7 +134,7 @@ const std::array<CharacterPreset, 12> CharacterBank::kFactoryPresets = {{
     // 10 — Tin-Can Telephone (Lo-fi extreme): crushed character + iron + trem.
     { "Tin-Can Telephone",
       /*voicing*/ 0,
-      /*char*/ 88.0f,/*drive*/ 75.0f,/*shape*/ 80.0f,/*time*/ 120.0f,/*space*/ 15.0f,/*mix*/ 85.0f,
+      /*char*/ 88.0f,/*drive*/ 75.0f,/*shape*/ 35.0f,/*time*/ 120.0f,/*space*/ 15.0f,/*mix*/ 85.0f,
       /*drvT*/2 /*Iron*/,/*modT*/2 /*Trem*/,/*pchT*/0,/*dlyT*/0,/*spcT*/2 /*Room*/,
       /*charOff*/false,/*drvOff*/false,/*modOff*/false,/*pchOff*/true,/*dlyOff*/true,/*spcOff*/false,
       /*lowCut*/120.0f,/*drvTone*/65.0f,/*drvMix*/ 90.0f,
