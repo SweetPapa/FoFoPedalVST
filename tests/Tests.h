@@ -10,3 +10,4 @@ void runDaydreamTests();
 void runFofopedalTests();
 void runDreamRipperTests();
 void runPresetTests();
+void runImpactTests();
