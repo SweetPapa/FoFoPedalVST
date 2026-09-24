@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include "fofo/Fofo.h"
 #include "fofo/Pitch.h"
 #include <atomic>
@@ -86,6 +87,10 @@ private:
     juce::SmoothedValue<float> busNormSm;
 
     fofo::Svf wetHp[2], wetDip[2], wetLp[2];
+
+    // Slow level trim on the sum (see process()).
+    std::vector<float> trimScratch;
+    float dryMs { 0.0f }, outMs { 0.0f }, trimCoef { 0.0f };
 
     juce::AudioBuffer<float> wetBus, monoSrc;
 
