@@ -117,8 +117,10 @@ private:
         const size_t i = (size_t) juce::jlimit (0, (int) hyst.size() - 1, ch);
 
         // Loop width grows with drive: harder magnetisation, more history.
+        // The loop closes completely as drive reaches zero, so an idle record
+        // head is a straight wire rather than a 0.7 dB treble-tilted one.
         const float g = 1.0f + 5.0f * drive01;
-        const float k = 0.08f + 0.34f * drive01;
+        const float k = (0.08f + 0.34f * drive01) * juce::jmin (1.0f, 10.0f * drive01);
 
         float y = hyst[i].process (x, g, k);
 

@@ -217,18 +217,19 @@ void runSwayTests()
                "MIX scales the movement rather than blending it away",
                t::fmt2 ("MIX 0.5 gives %.2f cents vs %.2f at full", half, full));
 
-        // Pin the voicing. Before calibration every COLOR setting landed
-        // between 36 and 43 cents — seasick, and COLOR barely changed the
-        // amount, so its "serviced deck to dying cassette" axis did nothing.
+        // Pin the voicing. v1 landed every COLOR setting between 36 and 43
+        // cents — seasick, and COLOR barely changed the amount. v2 pulled it
+        // to 3 / 20 with a 4.5-cent default, which nobody could hear. These
+        // bands are the v3 voicing: 5 / 25 / ~9.
         const double serviced = wanderCents (1.0f, 0.0f, 1.0f);
         const double dying    = wanderCents (1.0f, 1.0f, 1.0f);
         const double dflt     = wanderCents (0.45f, 0.5f, 1.0f);
 
-        t::ok (serviced > 2.0 && serviced < 4.5,
-               "COLOR 0 at full MOVE is a serviced deck (~3 cents)", t::fmt ("%.2f cents", serviced));
-        t::ok (dying > 15.0 && dying < 26.0,
-               "COLOR 1 at full MOVE is a cassette on its way out (~20 cents)", t::fmt ("%.2f cents", dying));
-        t::ok (dflt > 3.0 && dflt < 6.5,
+        t::ok (serviced > 3.5 && serviced < 7.0,
+               "COLOR 0 at full MOVE is a serviced deck (~5 cents)", t::fmt ("%.2f cents", serviced));
+        t::ok (dying > 20.0 && dying < 32.0,
+               "COLOR 1 at full MOVE is a cassette on its way out (~25 cents)", t::fmt ("%.2f cents", dying));
+        t::ok (dflt > 7.0 && dflt < 12.0,
                "and the shipped default is audible without being seasick", t::fmt ("%.2f cents", dflt));
         t::ok (dying > serviced * 4.0, "COLOR genuinely swings the amount of wear",
                t::fmt2 ("%.2f cents vs %.2f", dying, serviced));

@@ -28,10 +28,19 @@ namespace
     // the wobble happened to be — which made a perfectly smooth knob look like
     // it had 3 dB steps scattered through exactly that region. Noise RMS is
     // indifferent to pitch modulation, so it measures gain and nothing else.
+    //
+    // The noise is low-passed at 4 kHz so it has roughly the spectrum of
+    // program material. Since DAYDREAM 3 the tape machine is in the main
+    // path, and tape gap loss closes down to 7 kHz across the memory zone:
+    // WHITE noise carries most of its energy above that, so a white probe
+    // reads the gap loss as a 6 dB level drop that no real track would show.
     double noiseLevelDb (DaydreamEngine& e, float amp)
     {
         fofo::Rng rng;
         rng.seed (0xC0FFEEu);
+        fofo::Svf shape;
+        shape.prepare (kSr);
+        shape.set (fofo::Svf::Type::Lowpass, 4000.0f, 0.7f);
         juce::AudioBuffer<float> b (2, kBs);
         double acc = 0.0; int cnt = 0;
         const int blocks = 140;
@@ -39,7 +48,7 @@ namespace
         {
             for (int n = 0; n < kBs; ++n)
             {
-                const float s = amp * rng.bipolar();
+                const float s = amp * 2.0f * shape.process (rng.bipolar());
                 b.setSample (0, n, s); b.setSample (1, n, s);
             }
             e.process (b);
@@ -127,25 +136,39 @@ void runDaydreamTests()
         e.setDream01 (0.0f);
         settle (e);
 
+        // The tape machine sits in the main path, so the output is the input
+        // one transport-delay later. The reported figure is an integer (the
+        // oversampler's is rounded up) and the machine's filters add their own
+        // phase, so the true alignment at 440 Hz sits a few samples from it —
+        // align on the best lag in a small window around it.
+        const int lat = e.getLatencySamples();
+        auto inAt = [] (long long g)
+        {
+            return g < 0 ? 0.0f : 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                            * 440.0 * (double) g / kSr);
+        };
+
+        constexpr int kLags = 9;
         juce::AudioBuffer<float> b (2, kBs);
-        double err = 0.0, outPeak = 0.0;
+        double errAt[kLags] {}, outPeak = 0.0;
         for (int k = 0; k < 40; ++k)
         {
-            std::vector<float> in ((size_t) kBs);
             for (int n = 0; n < kBs; ++n)
             {
-                in[(size_t) n] = 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
-                                                          * 440.0 * (double) (k * kBs + n) / kSr);
-                b.setSample (0, n, in[(size_t) n]); b.setSample (1, n, in[(size_t) n]);
+                const float x = inAt ((long long) k * kBs + n);
+                b.setSample (0, n, x); b.setSample (1, n, x);
             }
             e.process (b);
             if (k > 20)
                 for (int n = 0; n < kBs; ++n)
                 {
-                    err = std::max (err, (double) std::abs (b.getSample (0, n) - in[(size_t) n]));
+                    for (int l = 0; l < kLags; ++l)
+                        errAt[l] = std::max (errAt[l], (double) std::abs (b.getSample (0, n)
+                                                        - inAt ((long long) k * kBs + n - lat - (l - kLags / 2))));
                     outPeak = std::max (outPeak, (double) std::abs (b.getSample (0, n)));
                 }
         }
+        const double err = *std::min_element (errAt, errAt + kLags);
         t::ok (err < 0.02, "DREAM 0 is within a whisker of the input",
                t::fmt ("max |out-in| = %.4f", err));
         t::ok (outPeak > 0.45 && outPeak < 0.56, "at essentially unity gain",

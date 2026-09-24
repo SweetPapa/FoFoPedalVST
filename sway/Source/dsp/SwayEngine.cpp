@@ -178,15 +178,18 @@ void SwayEngine::applyTapeParams()
     static_cast<Lfo*> (tapeMod.source (sFltR))->setRateHz (fltHz * 1.13f);
 
     const float msToSamp = 0.001f * (float) spec.sampleRate;
-    const float depth    = move01 * amt;
+    // MOVE is square-rooted so the first half of the knob is where the
+    // wobble arrives, not where it is still inaudible.
+    const float depth    = std::sqrt (move01) * amt;
 
-    // Calibrated against what real transports actually do, measured as RMS
-    // pitch deviation at MOVE 1 (tests/SwayTests.cpp reports this directly):
-    //   COLOR 0  →  ~3 cents   a serviced deck; movement you feel, not hear
-    //   COLOR 1  →  ~20 cents  a cassette on its way out
-    // Before this calibration every setting sat around 36-43 cents, which is
-    // seasick rather than musical, and COLOR barely changed the amount at all.
-    const float wear = juce::jmap (worn, 0.083f, 0.463f);
+    // Calibrated as RMS pitch deviation at MOVE 1 (tests/SwayTests.cpp
+    // reports this directly):
+    //   COLOR 0  →  ~5 cents   a serviced deck; a gentle, audible sway
+    //   COLOR 1  →  ~25 cents  a cassette on its way out
+    // and the shipped default lands near 9. v1 sat at 36-43 cents
+    // everywhere (seasick); v2 overcorrected to 3 / 20 with a 4.5-cent
+    // default, which is a wobble you had to be told was there.
+    const float wear = juce::jmap (worn, 0.139f, 0.579f);
 
     // The balance shifts as well as the amount: a good machine's error is
     // slow wow, a dying one's is fast flutter.
@@ -202,7 +205,11 @@ void SwayEngine::applyTapeParams()
     tapeMod.setRouteDepth (rSlipR, slipMs * msToSamp * 0.85f);
 
     // ── record head ──────────────────────────────────────────────────────
+    // Pushed +3..12 dB into the curve (and pulled back out after) so the
+    // saturation is heard at a normal recording level, not only when the
+    // track is already near clipping.
     tapeSat.setDrive (amt * (0.16f + 0.62f * worn));
+    tapePush = juce::Decibels::decibelsToGain (amt * (3.0f + 9.0f * worn));
     tapeSat.setEmphasisDb (2.0f + 5.0f * worn);
 
     // ── replay head and tape ─────────────────────────────────────────────
@@ -239,10 +246,18 @@ void SwayEngine::applyPumpParams()
 {
     const float rateHz = mapRate (rate01, 0.4f, 11.0f);
     static_cast<Lfo*> (pumpMod.source (sPumpLfo))->setRateHz (rateHz);
+    // COLOR walks the shape from a sine breath through a triangle to a
+    // rising saw: the gain drops at once and recovers over the cycle, which
+    // is the sidechain duck.
     static_cast<Lfo*> (pumpMod.source (sPumpLfo))->setShape (
-        color01 < 0.5f ? Lfo::Shape::Sine : Lfo::Shape::Triangle);
+        color01 < 0.33f ? Lfo::Shape::Sine
+      : color01 < 0.66f ? Lfo::Shape::Triangle
+                        : Lfo::Shape::SawUp);
 
-    const float depth = move01 * mix01 * 0.85f;
+    // Full depth arrives at MOVE ~0.77, so the top of the knob is a real
+    // pump that closes all the way. (v2 topped out at 85% and scaled by
+    // MOVE linearly: "Sidechain Pump" measured like a 50% tremolo.)
+    const float depth = juce::jmin (1.0f, move01 * 1.3f) * mix01;
 
     pumpMod.setBase (dPumpGain, 1.0f - depth * 0.5f);
     pumpMod.setRouteDepth (rPumpGain, depth * 0.5f);
@@ -294,7 +309,10 @@ void SwayEngine::processTape (juce::AudioBuffer<float>& buffer, int nS) noexcept
 {
     // No dry blend anywhere in here — that was the bug. A tape machine is
     // something you play through, so the signal is the tape's output.
+    const int nCh = juce::jmin (buffer.getNumChannels(), 2);
+    for (int ch = 0; ch < nCh; ++ch) buffer.applyGain (ch, 0, nS, tapePush);
     tapeSat.process (buffer, nS);
+    for (int ch = 0; ch < nCh; ++ch) buffer.applyGain (ch, 0, nS, 1.0f / tapePush);
 
     // The transport advances the matrix itself, once per sample, via the tick
     // callback wired in prepare() — so the modulation and the read pointer
@@ -334,16 +352,24 @@ void SwayEngine::processEnsemble (juce::AudioBuffer<float>& buffer, int nS) noex
             accR += tap * std::sqrt (0.5f * (1.0f + pan));
         }
 
-        const float norm = 0.5773503f; // 1/sqrt(3)
+        // Three decorrelated voices, sqrt-pan-law'd across the field, put
+        // 1.5 voices' worth of power on each side — normalise for that, not
+        // for all three stacked in one channel (which left the ensemble 3 dB
+        // under the dry it replaces at full MIX).
+        const float norm = 0.8164966f; // 1/sqrt(1.5)
         wl[n] = accL * norm;
         wr[n] = accR * norm;
     }
 
     // Ensemble is the one mode where dry and wet genuinely belong together —
-    // the comb between them IS the chorus. Straight blend, dry untouched, and
-    // no clipper on the sum.
-    const float dry = 1.0f - mix01;
-    const float wet = mix01;
+    // the comb between them IS the chorus. The voices come up to unity before
+    // the dry starts to leave, and the pair is then held at constant power,
+    // so MIX moves the balance without moving the level. (A straight
+    // crossfade lost up to 3 dB mid-knob.) No clipper on the sum.
+    const auto mg   = fofo::mixGains (fofo::MixRule::Ducked, mix01);
+    const float pw  = 1.0f / std::sqrt (mg.dry * mg.dry + mg.wet * mg.wet);
+    const float dry = mg.dry * pw;
+    const float wet = mg.wet * pw;
     for (int ch = 0; ch < nCh; ++ch)
     {
         auto* d = buffer.getWritePointer (ch);

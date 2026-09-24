@@ -124,7 +124,7 @@ void BackporchEngine::applyParams()
             early.setSize01 (juce::jmap (space01, 0.18f, 0.85f));
             early.setDampHz (juce::jmap (space01, 9500.0f, 5200.0f));
             early.setWidth01 (0.85f);
-            earlyGain = juce::jmap (space01, 0.75f, 0.50f);
+            earlyGain = juce::jmap (space01, 1.00f, 0.70f);
 
             tank.setSize01 (juce::jmap (space01, 0.22f, 0.68f));
             tank.setDecaySeconds (juce::jmap (space01, 0.35f, 2.6f));
@@ -135,7 +135,7 @@ void BackporchEngine::applyParams()
             tank.setCrossovers (260.0f, 3800.0f);
             tank.setModDepth (5.0f);
             tank.setWidth01 (0.82f);
-            tankGain = juce::jmap (space01, 0.55f, 0.95f);
+            tankGain = juce::jmap (space01, 0.90f, 1.25f);
 
             preSamp = juce::jmax (2.0f, juce::jmap (space01, 10.0f, 30.0f) * 0.001f * srf);
             slapGain = 0.0f;
@@ -186,14 +186,24 @@ void BackporchEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         sR = preDelay[1].processSample (sR, preSamp);
 
         // ── slap: one dark discrete repeat ────────────────────────────────
+        // The repeat IS the effect, so it goes straight to the wet bus as
+        // well as into the room that glues it. (v2 only fed it to the tank,
+        // which Slap runs at 10-30%, so the echo the mode is named for was
+        // never heard directly — "Nashville Slap" measured as barely there.)
+        float echoL = 0.0f, echoR = 0.0f;
         if (slapGain > 0.0f)
         {
             const float fbL = slapDark[0].process (slapLine[0].read (slapSamp));
-            const float fbR = slapDark[1].process (slapLine[1].read (slapSamp));
+            // The right repeat lands 7% later: the same slap off a wall a
+            // little further away on that side, which is width, not a second
+            // echo.
+            const float fbR = slapDark[1].process (slapLine[1].read (slapSamp * 1.07f));
             slapLine[0].push (sL + fbL * slapFeedback);
             slapLine[1].push (sR + fbR * slapFeedback);
+            echoL = fbL;
+            echoR = fbR;
             sL = slapLine[0].read (slapSamp) + sL * 0.12f;
-            sR = slapLine[1].read (slapSamp) + sR * 0.12f;
+            sR = slapLine[1].read (slapSamp * 1.07f) + sR * 0.12f;
         }
 
         // ── early field, then the late field it feeds ─────────────────────
@@ -204,8 +214,8 @@ void BackporchEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         float tL = 0.0f, tR = 0.0f;
         tank.process (sL + eL * 0.5f, sR + eR * 0.5f, tL, tR);
 
-        wl[n] = eL * earlyGain + tL * tankGain;
-        wr[n] = eR * earlyGain + tR * tankGain;
+        wl[n] = eL * earlyGain + tL * tankGain + echoL * slapGain;
+        wr[n] = eR * earlyGain + tR * tankGain + echoR * slapGain;
     }
 
     // ── tail tone, duck, and one recombine ────────────────────────────────

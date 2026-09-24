@@ -550,12 +550,14 @@ target_sources(FOFO_TESTS PRIVATE
     tests/FofopedalTests.cpp
     tests/DreamRipperTests.cpp
     tests/PresetTests.cpp
+    tests/ImpactTests.cpp
     # The shipping preset banks, so the data is tested and not just the code.
     sway/Source/presets/PresetBank.cpp
     backporch/Source/presets/PresetBank.cpp
     double/Source/presets/PresetBank.cpp
     daydream/Source/presets/PresetBank.cpp
     dreamripper/Source/presets/PresetBank.cpp
+    fofopedal/Source/presets/CharacterBank.cpp
     # Real pedal DSP, so the regression guards test what actually ships.
     double/Source/dsp/DoubleEngine.cpp
     fofopedal/Source/dsp/Character.cpp

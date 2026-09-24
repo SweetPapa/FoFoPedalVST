@@ -7,8 +7,8 @@ namespace
 {
     // Base offsets, staggered like separate takes rather than like delay taps.
     constexpr float kVoiceOffsetMs[DoubleEngine::kVoices] = { 0.0f, 7.0f, 3.5f, 11.0f };
-    // Detune polarity and scale: pair 1 at ±1×, pair 2 at ±2.1×.
-    constexpr float kVoiceDetuneMul[DoubleEngine::kVoices] = { -1.0f, +1.0f, -2.1f, +2.1f };
+    // Detune polarity and scale: pair 1 at ±1×, pair 2 at ±1.6×.
+    constexpr float kVoiceDetuneMul[DoubleEngine::kVoices] = { -1.0f, +1.0f, -1.6f, +1.6f };
     // Pan at full WIDE.
     constexpr float kVoicePan[DoubleEngine::kVoices] = { -1.0f, +1.0f, +0.6f, -0.6f };
 }
@@ -21,10 +21,10 @@ void DoubleEngine::prepare (const juce::dsp::ProcessSpec& s)
 
     for (int v = 0; v < kVoices; ++v)
     {
-        // 20 ms sweep range: the taps sit about 10 ms apart, which is where
-        // two real takes sit, and at the few cents of detune used here they
-        // hand over only about once every 2.5 seconds.
-        shifter[v].prepare (spec.sampleRate, 20.0f);
+        // 30 ms sweep range: the taps sit about 15 ms apart, which is where
+        // two real takes sit, and even at the top of THICK (28 cents) they
+        // hand over less than once a second and a half.
+        shifter[v].prepare (spec.sampleRate, 30.0f);
         voiceDelay[v].prepare (spec.sampleRate, 0.080f * (float) spec.sampleRate);
 
         // Three independent walks per voice. Different rates as well as
@@ -66,6 +66,8 @@ void DoubleEngine::prepare (const juce::dsp::ProcessSpec& s)
     }
 
     wetBus .setSize (2, spec.maxBlockSize, false, true, true);
+    trimScratch.assign ((size_t) spec.maxBlockSize, 1.0f);
+    trimCoef = std::exp (-1.0f / (0.300f * (float) spec.sampleRate));
     monoSrc.setSize (1, spec.maxBlockSize, false, true, true);
 
     modeDirty = true;
@@ -89,6 +91,7 @@ void DoubleEngine::reset()
     }
     wetBus.clear();
     monoSrc.clear();
+    dryMs = outMs = 0.0f;
 }
 
 void DoubleEngine::applyParams()
@@ -99,11 +102,11 @@ void DoubleEngine::applyParams()
         switch (mode)
         {
             // Keep the doubles behind the pick attack.
-            case Mode::Strings: hpHz = 130.0f; lpHz = 11000.0f; dipHz = 2800.0f; dipDb = -1.5f; break;
-            case Mode::Synth:   hpHz = 110.0f; lpHz = 14000.0f; dipHz = 1000.0f; dipDb =  0.0f; break;
-            // Dip the presence so the doubles sit behind the lead vocal.
+            case Mode::Strings: hpHz = 100.0f; lpHz = 13000.0f; dipHz = 2800.0f; dipDb = -1.0f; break;
+            case Mode::Synth:   hpHz =  80.0f; lpHz = 16000.0f; dipHz = 1000.0f; dipDb =  0.0f; break;
+            // A touch of presence dip so the doubles sit just behind the lead.
             case Mode::Vox:
-            default:            hpHz = 160.0f; lpHz = 12000.0f; dipHz = 3200.0f; dipDb = -2.0f; break;
+            default:            hpHz = 120.0f; lpHz = 14000.0f; dipHz = 3200.0f; dipDb = -1.0f; break;
         }
         for (int ch = 0; ch < 2; ++ch)
         {
@@ -152,13 +155,18 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         }
     }
 
-    const float detCents = 4.0f + 10.0f * thick01;                                 // ±4..14 cents
+    // ±7..28 cents. (v2 ran ±4..14: a real double, but one you had to solo
+    // the track to hear — every preset changed the sound less than a 3 dB
+    // treble shelf.)
+    const float detCents = 7.0f + 21.0f * thick01;
     const float pair2In  = juce::jlimit (0.0f, 1.0f, (thick01 - 0.5f) * 2.5f);     // 3 and 4 fade in past half
     const float baseMs   = (mode == Mode::Vox ? 18.0f : mode == Mode::Strings ? 24.0f : 14.0f);
     const float msToSamp = 0.001f * (float) spec.sampleRate;
 
     // Voice count is continuous, so the bus normalisation never steps.
-    busNormSm.setTargetValue (1.0f / std::sqrt (2.0f + 2.0f * pair2In));
+    // Each voice lands at about the dry's own level once panned — a double
+    // track is recorded as loud as the original, not 6 dB under it.
+    busNormSm.setTargetValue (1.0f / std::sqrt (1.0f + pair2In));
 
     for (int v = 0; v < kVoices; ++v)
     {
@@ -209,9 +217,31 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         }
     }
 
-    // Additive: the dry is never attenuated to make room for the doubles, and
-    // there is no clipper on the sum.
-    const float wetGain = mix01 * 0.95f;
+    // Additive: the doubles are layered on an untouched dry. The sum is then
+    // trimmed, over ~300 ms, back toward the dry's own level, so MIX reads as
+    // "more voices" rather than "louder". The trim only ever turns down, and
+    // only by the power the doubles actually added — on material they add
+    // nothing to (everything below the wet high-pass) it stays at unity. At
+    // MIX 0 the dry path is bit-exact. No clipper on the sum.
+    const float wetGain = mix01;
+    const bool  layered = wetGain > 0.0f;
+    for (int n = 0; n < nS; ++n)
+    {
+        float d2 = 0.0f, o2 = 0.0f;
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            const float dv = buffer.getReadPointer (ch)[n];
+            const auto* w  = wetBus.getReadPointer (nCh == 1 ? 0 : ch);
+            const float wv = (nCh == 1) ? 0.5f * (w[n] + wetBus.getReadPointer (1)[n]) : w[n];
+            const float ov = dv + wv * wetGain;
+            d2 += dv * dv; o2 += ov * ov;
+        }
+        dryMs = trimCoef * dryMs + (1.0f - trimCoef) * d2;
+        outMs = trimCoef * outMs + (1.0f - trimCoef) * o2;
+        trimScratch[(size_t) n] = layered ? juce::jlimit (0.5f, 1.0f, std::sqrt ((dryMs + 1.0e-10f) / (outMs + 1.0e-10f)))
+                                          : 1.0f;
+    }
+
     for (int ch = 0; ch < nCh; ++ch)
     {
         auto* d = buffer.getWritePointer (ch);
@@ -220,7 +250,8 @@ void DoubleEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         for (int n = 0; n < nS; ++n)
         {
             const float wv = (nCh == 1) ? 0.5f * (w[n] + wOther[n]) : w[n];
-            d[n] += wv * wetGain;
+            const float trim = trimScratch[(size_t) n];
+            d[n] = (d[n] + wv * wetGain) * trim;
         }
     }
 

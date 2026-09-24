@@ -63,11 +63,13 @@ void Character::updateCoefficients()
     const float ratio = juce::jmap (amount, 0.0f, 1.0f, 1.8f, 4.5f);
     ratioInv = 1.0f / ratio;
 
-    // Soft auto-makeup. Roughly compensates the average gain reduction so
-    // that perceived loudness stays even across the dial.
-    const float refOverDb = 6.0f;
-    const float avgReductionDb = -refOverDb * (1.0f - ratioInv) * 0.5f;
-    makeupGain = juce::Decibels::decibelsToGain (-avgReductionDb);
+    // Auto-makeup from where the threshold actually sits: give back ~60% of
+    // the reduction a typical -12 dBFS peak program would see. (v2 assumed
+    // a flat 6 dB over threshold at every setting, so at high CHARACTER —
+    // threshold near -30 dB, 15+ dB of reduction — it made up only ~2 dB and
+    // the console stage alone cost a character several dB.)
+    const float overRefDb = juce::jmax (0.0f, -12.0f - threshDb);
+    makeupGain = juce::Decibels::decibelsToGain (0.6f * (1.0f - ratioInv) * overRefDb);
 
     // ── Filters ────────────────────────────────────────────────────────
     {

@@ -41,6 +41,10 @@ private:
     fofo::Spec spec {};
 
     Algo  algo       { Algo::Chorus };
+    // How far an inherently-wet algorithm (phaser, tremolo, vibrato) goes:
+    // MIX reaches full depth at halfway.
+    float wetAmount() const noexcept { return juce::jmin (1.0f, 2.0f * mix01); }
+
     float rate01     { 0.30f };
     float depth01    { 0.50f };
     float shape01    { 0.50f };
@@ -60,7 +64,7 @@ private:
 
     fofo::ModMatrix           mod;
     fofo::ModMatrix::SourceId sVoice[kVoices] {}, sDrift[kVoices] {}, sPhaser {}, sTrem {};
-    fofo::ModMatrix::DestId   dVoice[kVoices] {}, dPhaser {}, dTrem {};
+    fofo::ModMatrix::DestId   dVoice[kVoices] {}, dPhaser {}, dTrem {}, dVib {};
     int                       rVoice[kVoices] {}, rDrift[kVoices] {}, rPhaser {}, rTrem {};
 
     juce::AudioBuffer<float> drySnap;

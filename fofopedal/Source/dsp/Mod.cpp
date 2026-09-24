@@ -56,6 +56,9 @@ void Mod::prepare (const juce::dsp::ProcessSpec& s)
     static_cast<Lfo*> (mod.source (sTrem))->setRateDrift (0.08f);
     dTrem = mod.addDest ("trem", 1.0f, 0.0f, 1.0f);
     rTrem = mod.connect (sTrem, dTrem, 0.0f);
+    // The same LFO, unscaled and ramped, for the vibrato's delay sweep.
+    dVib = mod.addDest ("vib", 0.0f, -1.0f, 1.0f);
+    mod.connect (sTrem, dVib, 1.0f);
 
     mod.prepare (spec);
 
@@ -113,8 +116,10 @@ void Mod::applyParams()
         default:
         {
             static_cast<Lfo*> (mod.source (sTrem))->setRateHz (mapRate (rate01, 0.3f, 12.0f));
-            // SHAPE crossfades tremolo (amplitude) into vibrato (pitch).
-            const float tremDepth = depth01 * (1.0f - shape01) * 0.85f;
+            // SHAPE crossfades tremolo (amplitude) into vibrato (pitch). The
+            // tremolo can reach a full chop: at DEPTH 1 / SHAPE 0 / MIX past
+            // halfway the gain swings all the way to zero.
+            const float tremDepth = depth01 * (1.0f - shape01) * wetAmount();
             mod.setBase (dTrem, 1.0f - tremDepth * 0.5f);
             mod.setRouteDepth (rTrem, tremDepth * 0.5f);
             break;
@@ -134,7 +139,11 @@ void Mod::process (juce::AudioBuffer<float>& buffer) noexcept
     for (int ch = 0; ch < nCh; ++ch)
         drySnap.copyFrom (ch, 0, buffer, ch, 0, nS);
 
-    const float dry = 1.0f - mix01;
+    // Chorus is dry plus detuned copies, so MIX blends. Phaser, tremolo and
+    // vibrato only exist at 100% wet — blending them with dry just halves
+    // them — so for those MIX sets how deep the effect goes instead.
+    const auto [dry, wet] = fofo::mixGains (fofo::MixRule::Ducked, mix01);
+    const float amount = wetAmount();
     const float msToSamp = 0.001f * (float) spec.sampleRate;
 
     for (int n = 0; n < nS; ++n)
@@ -181,29 +190,40 @@ void Mod::process (juce::AudioBuffer<float>& buffer) noexcept
                 phaserFb[ch] = x;
                 // A phaser is the sum of dry and the all-passed copy: the
                 // notches come from the cancellation, not from the filter.
-                (ch == 0 ? wl : wr) = 0.5f * (drySnap.getReadPointer (ch)[n] + x);
+                // Full notch depth once MIX reaches halfway.
+                const float d = drySnap.getReadPointer (ch)[n];
+                (ch == 0 ? wl : wr) = d * (1.0f - 0.5f * amount) + 0.5f * amount * x;
             }
         }
         else // TremVib
         {
             const float g = mod.get (dTrem);
-            // SHAPE past halfway swaps amplitude modulation for pitch.
-            const float vibDepth = depth01 * shape01 * 2.0f;
+            // The vibrato reads the raw LFO. (It used to be derived from the
+            // tremolo gain, whose swing shrinks as SHAPE rises — so the
+            // vibrato vanished exactly where SHAPE asked for all of it.)
+            // Up to ±2.5 ms of sweep: about a semitone at 5 Hz.
+            const float lfo = mod.get (dVib);
+            const float vibMs = depth01 * shape01 * amount * 2.5f;
             for (int ch = 0; ch < nCh; ++ch)
             {
                 float x = drySnap.getReadPointer (ch)[n];
-                if (vibDepth > 0.0f)
-                {
-                    const float d = juce::jmax (2.0f, (6.0f + vibDepth * (2.0f * g - 1.0f) * 3.0f) * msToSamp);
-                    x = vibLine[ch].processSample (x, d);
-                }
+                const float d = juce::jmax (2.0f, (3.0f + vibMs * lfo) * msToSamp);
+                x = vibLine[ch].processSample (x, d);
                 (ch == 0 ? wl : wr) = x * g;
             }
         }
 
-        buffer.getWritePointer (0)[n] = drySnap.getReadPointer (0)[n] * dry + wl * mix01;
-        if (nCh > 1)
-            buffer.getWritePointer (1)[n] = drySnap.getReadPointer (1)[n] * dry + wr * mix01;
+        if (algo == Algo::Chorus)
+        {
+            buffer.getWritePointer (0)[n] = drySnap.getReadPointer (0)[n] * dry + wl * wet;
+            if (nCh > 1)
+                buffer.getWritePointer (1)[n] = drySnap.getReadPointer (1)[n] * dry + wr * wet;
+        }
+        else
+        {
+            buffer.getWritePointer (0)[n] = wl;
+            if (nCh > 1) buffer.getWritePointer (1)[n] = wr;
+        }
     }
 }
 
