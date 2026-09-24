@@ -146,6 +146,8 @@ void Space::process (juce::AudioBuffer<float>& buffer) noexcept
     const float shimAmt = (algo == Algo::Shimmer) ? juce::jmin (0.62f, shimmer01 * 0.62f)
                                                   : juce::jmin (0.35f, shimmer01 * 0.35f);
 
+    const auto [dryGain, wetGain] = fofo::mixGains (fofo::MixRule::Ducked, mix01);
+
     for (int n = 0; n < nS; ++n)
     {
         // Key the duck off the block input, mono-summed.
@@ -181,11 +183,11 @@ void Space::process (juce::AudioBuffer<float>& buffer) noexcept
         const float wetL = (tL + eL * earlyGain) * duck;
         const float wetR = (tR + eR * earlyGain) * duck;
 
-        // The block's own mix. No clipper on the sum.
-        const float dry = 1.0f - mix01;
-        buffer.getWritePointer (0)[n] = drySnap.getReadPointer (0)[n] * dry + wetL * mix01;
+        // The block's own mix: the tail comes up to unity before the dry
+        // starts to leave. No clipper on the sum.
+        buffer.getWritePointer (0)[n] = drySnap.getReadPointer (0)[n] * dryGain + wetL * wetGain;
         if (nCh > 1)
-            buffer.getWritePointer (1)[n] = drySnap.getReadPointer (1)[n] * dry + wetR * mix01;
+            buffer.getWritePointer (1)[n] = drySnap.getReadPointer (1)[n] * dryGain + wetR * wetGain;
     }
 }
 

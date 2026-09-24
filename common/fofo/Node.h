@@ -113,6 +113,27 @@ enum class MixRule
     Ducked
 };
 
+struct MixGains { float dry, wet; };
+
+// The gains a rule applies at a given mix. Blocks that recombine by hand (a
+// wet path that has to be computed per sample alongside the dry) call this
+// rather than writing their own crossfade — a hand-rolled `dry·(1−m) + wet·m`
+// loses up to 3 dB whenever the wet is decorrelated from the dry, and chained
+// through four blocks that was 10 dB of a pedal getting quieter as it worked.
+inline MixGains mixGains (MixRule rule, float mix) noexcept
+{
+    mix = juce::jlimit (0.0f, 1.0f, mix);
+    switch (rule)
+    {
+        case MixRule::Additive: return { 1.0f, mix };
+        case MixRule::Ducked:
+            if (mix <= 0.70f) return { 1.0f, mix / 0.70f };
+            return { 1.0f - (mix - 0.70f) / 0.30f, 1.0f };
+        case MixRule::Blend:
+        default:                return { 1.0f - mix, mix };
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Parallel — the structural fix.
 //
@@ -186,20 +207,7 @@ public:
         align.process (dry, numSamples);
 
         // 4) one recombine, no shaper
-        float dryGain = 1.0f, wetGain = 1.0f;
-        switch (rule)
-        {
-            case MixRule::Blend:
-                dryGain = 1.0f - mix; wetGain = mix;
-                break;
-            case MixRule::Additive:
-                dryGain = 1.0f;       wetGain = mix;
-                break;
-            case MixRule::Ducked:
-                if (mix <= 0.70f) { wetGain = mix / 0.70f;             dryGain = 1.0f; }
-                else              { wetGain = 1.0f; dryGain = 1.0f - (mix - 0.70f) / 0.30f; }
-                break;
-        }
+        const auto [dryGain, wetGain] = mixGains (rule, mix);
 
         for (int ch = 0; ch < nCh; ++ch)
         {

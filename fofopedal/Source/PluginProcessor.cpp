@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "dsp/Controls.h"
 
 using APVTS = juce::AudioProcessorValueTreeState;
 using namespace fofopedal;
@@ -18,7 +19,6 @@ namespace
         0.25f,  // 1/16 note
     };
 
-    inline float pct (float p) { return p * 0.01f; }
 }
 
 APVTS::ParameterLayout FofopedalAudioProcessor::createParameterLayout()
@@ -221,101 +221,63 @@ bool FofopedalAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 
 void FofopedalAudioProcessor::wireBlockParameters() noexcept
 {
-    // Sample-and-forward all APVTS values into the engine. Block setters
-    // are cheap (early-out on no-change) so we can do this every buffer.
+    // Snapshot the front panel, resolve TIME against the host tempo, and hand
+    // it to the one shared mapping (dsp/Controls.h) — which is also what the
+    // tests measure. Block setters early-out on no change, so this is cheap
+    // enough to run every buffer.
+    auto b = [] (std::atomic<float>* p) { return p->load() > 0.5f; };
+    auto i = [] (std::atomic<float>* p) { return (int) p->load(); };
 
-    // Global MIX is an RC-20-style magnitude macro: it scales every block's
-    // intensity in place. (v1 instead crossfaded the whole processed chain
-    // against raw dry — but the chain already contains the dry via per-block
-    // mixes, so that doubled the dry and diluted everything into mud.)
-    const float g = pct (pMix->load());
+    CharacterPreset c {};
+    c.voicing           = i (pVoicing);
+    c.character         = pCharacter->load();
+    c.drive             = pDrive->load();
+    c.shape             = pShape->load();
+    c.timeMs            = pTimeMs->load();
+    c.space             = pSpace->load();
+    c.mix               = pMix->load();
+    c.driveType         = i (pDriveType);
+    c.modType           = i (pModType);
+    c.pitchType         = i (pPitchType);
+    c.delayType         = i (pDelayType);
+    c.spaceType         = i (pSpaceType);
+    c.characterDefeated = b (pCharacterDefeated);
+    c.driveBypassed     = b (pDriveBypassed);
+    c.modBypassed       = b (pModBypassed);
+    c.pitchBypassed     = b (pPitchBypassed);
+    c.delayBypassed     = b (pDelayBypassed);
+    c.spaceBypassed     = b (pSpaceBypassed);
+    c.characterLowCut   = pCharacterLowCut->load();
+    c.driveTone         = pDriveTone->load();
+    c.driveMix          = pDriveMix->load();
+    c.modRate           = pModRate->load();
+    c.modDepth          = pModDepth->load();
+    c.modFeedback       = pModFeedback->load();
+    c.modMix            = pModMix->load();
+    c.pitchAmount       = pPitchAmount->load();
+    c.pitchShape        = pPitchShape->load();
+    c.pitchMix          = pPitchMix->load();
+    c.delayFeedback     = pDelayFeedback->load();
+    c.delayHfCut        = pDelayHfCut->load();
+    c.delayPingPong     = b (pDelayPingPong);
+    c.spacePreDelayMs   = pSpacePreDelay->load();
+    c.spaceShimmer      = pSpaceShimmer->load();
+    c.spaceSendHpHz     = pSpaceSendHp->load();
+    c.glueAmount        = pGlueAmount->load();
+    c.glueDefeated      = b (pGlueDefeated);
+    c.swapModPitch      = b (pSwapModPitch);
+    c.swapDelaySpace    = b (pSwapDelaySpace);
 
-    // Character — the always-on console stage; not scaled by MIX.
-    engine.character().setAmount01    (pct (pCharacter        ->load()));
-    engine.character().setLowCutHz    (        pCharacterLowCut->load());
-    engine.character().setDefeated    (        pCharacterDefeated->load() > 0.5f);
-
-    // Drive.
-    engine.drive().setAlgo     ((Drive::Algo) (int) pDriveType->load());
-    engine.drive().setDrive01  (pct (pDrive->load()));
-    engine.drive().setTone01   (pct (pDriveTone->load()));
-    engine.drive().setMix01    (pct (pDriveMix->load()) * g);
-    engine.drive().setBypassed (pDriveBypassed->load() > 0.5f);
-
-    // Mod — modulation depth gets a SHAPE bias for context-sensitive feel.
-    {
-        const float shape = pct (pShape->load());
-        engine.mod().setAlgo       ((Mod::Algo) (int) pModType->load());
-        engine.mod().setRate01     (pct (pModRate->load()));
-        // SHAPE adds up to 50% on top of the user's stored mod depth.
-        const float depthBase = pct (pModDepth->load());
-        const float depthOut  = juce::jlimit (0.0f, 1.0f, depthBase + shape * 0.5f);
-        engine.mod().setDepth01    (depthOut);
-        engine.mod().setShape01    (shape);
-        engine.mod().setFeedback01 (pct (pModFeedback->load()));
-        engine.mod().setMix01      (pct (pModMix->load()) * g);
-        engine.mod().setBypassed   (pModBypassed->load() > 0.5f);
-    }
-
-    // Pitch — micro-detune amount also bumps with SHAPE on VOX/ACOUSTIC.
-    {
-        const int voiceIdx = (int) pVoicing->load();
-        const float shape  = pct (pShape->load());
-        const float vocalBias = (voiceIdx == 0 /*Vox*/ || voiceIdx == 3 /*Acoustic*/) ? 0.4f : 0.15f;
-        engine.pitch().setAlgo     ((Pitch::Algo) (int) pPitchType->load());
-        engine.pitch().setAmount01 (juce::jlimit (0.0f, 1.0f, pct (pPitchAmount->load()) + shape * vocalBias));
-        engine.pitch().setShape01  (pct (pPitchShape->load()));
-        engine.pitch().setMix01    (pct (pPitchMix->load()) * g);
-        engine.pitch().setBypassed (pPitchBypassed->load() > 0.5f);
-    }
-
-    // Delay — resolve TIME from either raw ms or host BPM + division.
-    {
-        float timeMs = pTimeMs->load();
-        if (pHostSync->load() > 0.5f)
-        {
-            if (auto* ph = getPlayHead())
-            {
-                if (auto info = ph->getPosition())
+    if (b (pHostSync))
+        if (auto* ph = getPlayHead())
+            if (auto info = ph->getPosition())
+                if (auto bpm = info->getBpm())
                 {
-                    if (auto bpm = info->getBpm())
-                    {
-                        const float beatMs = 60000.0f / (float) *bpm;
-                        const int divIdx = juce::jlimit (0, 4, (int) pSyncDivision->load());
-                        timeMs = beatMs * kSyncBeatMultiplier[divIdx];
-                    }
+                    const int divIdx = juce::jlimit (0, 4, i (pSyncDivision));
+                    c.timeMs = (60000.0f / (float) *bpm) * kSyncBeatMultiplier[divIdx];
                 }
-            }
-        }
-        engine.delay().setAlgo       ((Delay::Algo) (int) pDelayType->load());
-        engine.delay().setTimeMs     (juce::jlimit (1.0f, 2000.0f, timeMs));
-        engine.delay().setFeedback01 (pct (pDelayFeedback->load()));
-        engine.delay().setHfCut01    (pct (pDelayHfCut->load()));
-        engine.delay().setMix01      (0.38f * g); // v1 never wired this — repeats sat at a fixed internal level
-        engine.delay().setPingPong   (pDelayPingPong->load() > 0.5f);
-        engine.delay().setBypassed   (pDelayBypassed->load() > 0.5f);
-    }
 
-    // Space — SPACE macro drives size + mix together (Activity-knob style).
-    {
-        const float spaceMacro = pct (pSpace->load());
-        engine.space().setAlgo        ((Space::Algo) (int) pSpaceType->load());
-        engine.space().setSize01      (spaceMacro);
-        engine.space().setMix01       (spaceMacro * 0.85f * g); // tail bias — mix ramps a little behind size
-        engine.space().setPreDelayMs  (pSpacePreDelay->load());
-        engine.space().setShimmer01   (pct (pSpaceShimmer->load()));
-        engine.space().setSendHpHz    (pSpaceSendHp->load());
-        engine.space().setBypassed    (pSpaceBypassed->load() > 0.5f);
-    }
-
-    // Output Glue.
-    engine.glue().setAmount01 (pct (pGlueAmount->load()));
-    engine.glue().setDefeated (pGlueDefeated->load() > 0.5f);
-
-    // Voicing + reorder.
-    engine.setVoicing       ((FofoEngine::Voicing) (int) pVoicing->load());
-    engine.setModPitchSwap  (pSwapModPitch->load() > 0.5f);
-    engine.setDelaySpaceSwap(pSwapDelaySpace->load() > 0.5f);
+    applyControls (engine, c);
 }
 
 void FofopedalAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -329,10 +291,8 @@ void FofopedalAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
     wireBlockParameters();
 
-    // MIX is applied inside wireBlockParameters as a magnitude macro across
-    // all block intensities (RC-20 style) — no outer crossfade. The old
-    // chain-vs-dry crossfade layered the dry signal twice (the chain output
-    // already contains it) and was the main source of the "muddled" sound.
+    // MIX is applied inside applyControls as a magnitude macro across all
+    // block intensities — no outer crossfade (see dsp/Controls.h).
     engine.process (buffer);
 }
 

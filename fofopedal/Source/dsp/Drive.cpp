@@ -58,6 +58,8 @@ void Drive::prepare (const juce::dsp::ProcessSpec& s)
     for (auto& b : dcBlock) b.setCutoff (15.0f, s.sampleRate);
     touchEnv.prepare (5.0f, 150.0f, s.sampleRate);
     envScratch.assign (s.maximumBlockSize, 0.0f);
+    makeupScratch.assign (s.maximumBlockSize, 1.0f);
+    levelCoef = std::exp (-1.0f / (0.300f * (float) s.sampleRate));
 
     toneDirty = true;
     rebuildFilters();
@@ -75,6 +77,7 @@ void Drive::reset()
     for (auto& h : hyst)    h.reset();
     for (auto& b : dcBlock) b.reset();
     touchEnv.reset();
+    levelMs = 0.0f;
     dryDelay.reset();
 }
 
@@ -169,11 +172,13 @@ void Drive::process (juce::AudioBuffer<float>& buffer) noexcept
         }
     }
 
-    // Drive in the dB domain: more travel in the usable low half, and ~78%
-    // loudness compensation so the knob changes texture, not just volume.
-    const float driveDb = 30.0f * std::pow (drive01, 1.4f);
+    // Drive in the dB domain, 6..46 dB, so even the bottom of the knob is
+    // pushing the curve at a normal recording level. (v2 ran 0..30 dB with a
+    // p^1.4 taper: a character at DRIVE 18 was putting 2.8 dB into a tanh,
+    // which is a clean signal with a drive label on it.)
+    //
+    const float driveDb = 6.0f + 40.0f * std::pow (drive01, 1.2f);
     const float preGain = juce::Decibels::decibelsToGain (driveDb);
-    const float makeup  = juce::Decibels::decibelsToGain (-0.78f * driveDb);
 
     // Base-rate input envelope → bias drift (tube touch response). One value
     // per base sample, indexed from inside the oversampled loop.
@@ -181,7 +186,19 @@ void Drive::process (juce::AudioBuffer<float>& buffer) noexcept
     {
         float mono = 0.0f;
         for (int ch = 0; ch < nCh; ++ch) mono += buffer.getReadPointer (ch)[n];
-        envScratch[(size_t) n] = touchEnv.process (mono / (float) juce::jmax (1, nCh));
+        mono /= (float) juce::jmax (1, nCh);
+        envScratch[(size_t) n] = touchEnv.process (mono);
+
+        // Makeup follows the input's own level over ~300 ms: whatever goes in
+        // comes out about as loud, at any DRIVE and any input level, so the
+        // knob changes texture and compression and never just volume. The
+        // follower is slow enough that the squash inside a note survives.
+        // (v2 subtracted a fixed 78% of the drive dB, which kept pulling level
+        // down after the curve had flattened — a driven block came out up to
+        // ~10 dB quieter, and a quieter pedal always sounds like a worse one.)
+        levelMs = levelCoef * levelMs + (1.0f - levelCoef) * mono * mono;
+        const float peakish = juce::jmax (0.02f, 1.6f * std::sqrt (levelMs));
+        makeupScratch[(size_t) n] = peakish / std::tanh (peakish * preGain);
     }
 
     juce::dsp::AudioBlock<float> blk (buffer);
@@ -223,7 +240,7 @@ void Drive::process (juce::AudioBuffer<float>& buffer) noexcept
                 case Algo::NumAlgos:
                 default:         y = x;             break;
             }
-            d[n] = y * makeup;
+            d[n] = y * makeupScratch[(size_t) juce::jmin (nS - 1, n / upPerBase)];
         }
     }
 

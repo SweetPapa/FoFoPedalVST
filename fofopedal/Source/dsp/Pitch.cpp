@@ -88,7 +88,7 @@ void Pitch::process (juce::AudioBuffer<float>& buffer) noexcept
 void Pitch::processShift (juce::AudioBuffer<float>& buffer, int nS, float ratioL, float ratioR) noexcept
 {
     const int nCh = juce::jmin (buffer.getNumChannels(), 2);
-    const float dry = 1.0f - mix01;
+    const auto [dry, wet] = fofo::mixGains (fofo::MixRule::Ducked, mix01);
 
     for (int n = 0; n < nS; ++n)
     {
@@ -103,7 +103,7 @@ void Pitch::processShift (juce::AudioBuffer<float>& buffer, int nS, float ratioL
         for (int ch = 0; ch < nCh; ++ch)
         {
             const float w = shifter[ch].process (drySnap.getReadPointer (ch)[n]);
-            buffer.getWritePointer (ch)[n] = drySnap.getReadPointer (ch)[n] * dry + w * mix01;
+            buffer.getWritePointer (ch)[n] = drySnap.getReadPointer (ch)[n] * dry + w * wet;
         }
     }
 }
@@ -111,7 +111,7 @@ void Pitch::processShift (juce::AudioBuffer<float>& buffer, int nS, float ratioL
 void Pitch::processFreeze (juce::AudioBuffer<float>& buffer, int nS) noexcept
 {
     const int nCh = juce::jmin (buffer.getNumChannels(), 2);
-    const float dry = 1.0f - mix01;
+    const auto [dry, wet] = fofo::mixGains (fofo::MixRule::Ducked, mix01);
 
     // SHAPE sets how long a slice is held; AMOUNT is the freeze threshold, so
     // the block grabs and holds when the input drops away.
@@ -166,7 +166,7 @@ void Pitch::processFreeze (juce::AudioBuffer<float>& buffer, int nS) noexcept
         for (int ch = 0; ch < nCh; ++ch)
         {
             const float w = (ch == 0) ? wl : wr;
-            buffer.getWritePointer (ch)[n] = drySnap.getReadPointer (ch)[n] * dry + w * mix01;
+            buffer.getWritePointer (ch)[n] = drySnap.getReadPointer (ch)[n] * dry + w * wet;
         }
 
         writeHead = (writeHead + 1) % ringSize;

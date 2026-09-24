@@ -78,6 +78,9 @@ private:
     std::vector<spt::DCBlocker>      dcBlock;
     spt::EnvFollower touchEnv;        // base-rate input follower → bias drift
     std::vector<float> envScratch;    // one env value per base sample
+    std::vector<float> makeupScratch; // one makeup gain per base sample
+    float levelMs { 0.0f };           // slow mean-square follower for makeup
+    float levelCoef { 0.0f };
 
     juce::AudioBuffer<float> dryBuffer;
 
