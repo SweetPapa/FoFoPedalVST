@@ -44,7 +44,10 @@ public:
 
     void setDream01 (float v) noexcept { dreamTarget = juce::jlimit (0.0f, 1.0f, v); }
 
-    int  getLatencySamples() const noexcept { return 0; }
+    // The tape machine is in the main path, so its transport delay is real
+    // latency. It is the same at every knob position — the machine is always
+    // threaded, only how hard it works changes — so the host compensates once.
+    int  getLatencySamples() const noexcept { return tapeSat.latencySamples() + transport.latencySamples(); }
 
     void process (juce::AudioBuffer<float>& buffer) noexcept;
 
@@ -65,9 +68,16 @@ private:
     fofo::Svf inputHp[2];
 
     // Tape: the "warm" third of the knob, and the wow that arrives with the
-    // middle third.
+    // middle third. This is the MAIN path — the whole track plays through the
+    // machine, and the space is fed from the machine's output. (v2 had the
+    // machine on the reverb send only, so the tape and the wobble the knob
+    // promised never touched the signal anyone was actually listening to.)
     fofo::TapeSaturator tapeSat;
     fofo::TapeTransport transport;
+    float tapePush { 1.0f };        // pre-gain into the record head
+
+    // Slow level match across the machine (see process()).
+    float inMs { 0.0f }, outMs { 0.0f }, levelCoef { 0.0f };
 
     // Space: early reflections into an FDN, with a pitch shifter inside the
     // feedback path for the shimmer.
@@ -96,7 +106,7 @@ private:
     fofo::Rng noiseRng;
     fofo::Svf noiseLp;
 
-    juce::AudioBuffer<float> drySnap, wetBus;
+    juce::AudioBuffer<float> drySnap, machine, wetBus;
 
     juce::SmoothedValue<float> dryGainSm { 1.0f };
     juce::SmoothedValue<float> wetGainSm { 0.0f };

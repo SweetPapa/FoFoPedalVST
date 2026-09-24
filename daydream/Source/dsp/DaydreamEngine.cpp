@@ -74,7 +74,10 @@ void DaydreamEngine::prepare (const juce::dsp::ProcessSpec& s)
     noiseLp.prepare (spec.sampleRate);
     noiseLp.set (fofo::Svf::Type::Lowpass, 7000.0f, 0.6f);
 
+    levelCoef = std::exp (-1.0f / (0.300f * (float) spec.sampleRate));
+
     drySnap.setSize (2, spec.maxBlockSize, false, true, true);
+    machine.setSize (2, spec.maxBlockSize, false, true, true);
     wetBus .setSize (2, spec.maxBlockSize, false, true, true);
 
     dryGainSm.reset (spec.sampleRate, 0.05);
@@ -100,9 +103,11 @@ void DaydreamEngine::reset()
         outputLp[ch].reset();
     }
     shimFbL = shimFbR = 0.0f;
+    inMs = outMs = 0.0f;
     mod.reset();
     noiseLp.reset();
     drySnap.clear();
+    machine.clear();
     wetBus.clear();
 }
 
@@ -115,9 +120,14 @@ void DaydreamEngine::updateMacros (float k01)
     const float dream  = smoothstep (0.62f, 1.00f, k01);
 
     // ── warm: tape ───────────────────────────────────────────────────────
+    // The record head is fed from -12 dB (the linear part of the curve, so
+    // the bottom of the knob stays clean even on a hot track) up to +14 dB
+    // over the warm third, so the saturation is audible on a track recorded
+    // at a sensible level rather than only on one that is already clipping.
     tapeAmt = warm;
-    tapeSat.setDrive (0.10f + 0.45f * warm);
-    tapeSat.setEmphasisDb (2.0f + 3.0f * warm);
+    tapeSat.setDrive (0.60f * warm + 0.15f * dream);
+    tapeSat.setEmphasisDb (2.0f + 4.0f * warm);
+    tapePush = juce::Decibels::decibelsToGain (-12.0f + 26.0f * warm);
     transport.setHeadBump (juce::jmap (warm, 90.0f, 62.0f), warm * 2.4f);
     transport.setGapLossHz (juce::jmap (memory, 16000.0f, 7000.0f));
     transport.setSelfErasure (0.15f + 0.35f * warm);
@@ -125,7 +135,10 @@ void DaydreamEngine::updateMacros (float k01)
     transport.setHissDb (k01 < 0.05f ? -120.0f : juce::jmap (warm, -88.0f, -74.0f));
 
     // ── memory: wow, width, and the room growing ─────────────────────────
-    wowMs = memory * 1.1f;
+    // Up to ~3.2 ms of swing at ~0.6 Hz: about 12 cents peak drift at the top of
+    // memory and ~20 at full dream — a tape you can hear wander, stopping
+    // short of seasick. (v2's 1.1 ms was ~6 cents, and on the send only.)
+    wowMs = memory * 2.0f + dream * 1.2f;
     const float msToSamp = 0.001f * (float) spec.sampleRate;
     mod.setRouteDepth (rWowL, wowMs * msToSamp);
     mod.setRouteDepth (rWowR, wowMs * msToSamp * 0.88f);
@@ -156,8 +169,8 @@ void DaydreamEngine::updateMacros (float k01)
 
     // Dry holds up; wet climbs. The dry floor keeps the performance present
     // even at full dream.
-    dryGainSm.setTargetValue (juce::jmap (dream, 1.0f, 0.75f));
-    wetGainSm.setTargetValue (juce::jmap (k01, 0.0f, 0.82f));
+    dryGainSm.setTargetValue (juce::jmap (dream, 1.0f, 0.65f));
+    wetGainSm.setTargetValue (juce::jmap (std::sqrt (k01), 0.0f, 1.0f));
 }
 
 void DaydreamEngine::process (juce::AudioBuffer<float>& buffer) noexcept
@@ -180,14 +193,13 @@ void DaydreamEngine::process (juce::AudioBuffer<float>& buffer) noexcept
     for (int ch = 0; ch < nCh; ++ch)
         drySnap.copyFrom (ch, 0, buffer, ch, 0, nS);
 
-    // ── send: high-pass, tape saturation, then the transport ─────────────
-    for (int ch = 0; ch < nCh; ++ch)
-    {
-        auto* d = buffer.getWritePointer (ch);
-        for (int n = 0; n < nS; ++n) d[n] = inputHp[ch].process (d[n]);
-    }
-
+    // ── the machine: the whole signal plays through the tape ─────────────
+    // Push into the record head, then take the same amount back out, so the
+    // push changes how hard the tape works and not how loud the track is.
+    const float unpush = 1.0f / tapePush;
+    for (int ch = 0; ch < nCh; ++ch) buffer.applyGain (ch, 0, nS, tapePush);
     tapeSat.process (buffer, nS);
+    for (int ch = 0; ch < nCh; ++ch) buffer.applyGain (ch, 0, nS, unpush);
 
     // The transport advances the matrix once per sample. The ducker keys off
     // the DRY signal — a wash that ducks under its own tail never gets out of
@@ -196,6 +208,36 @@ void DaydreamEngine::process (juce::AudioBuffer<float>& buffer) noexcept
     tickDryL = drySnap.getReadPointer (0);
     tickDryR = nCh > 1 ? drySnap.getReadPointer (1) : nullptr;
     transport.process (buffer, nS);
+
+    // Level match across the machine over ~300 ms. Saturation, gap loss and
+    // self-erasure all take level away as the knob rises — a pushed tape
+    // tops out around the curve's ceiling however hard it is hit — and a
+    // pedal that gets quieter as it works sounds like it is doing less. This
+    // brings the machine back to the level that went in, slowly enough that
+    // the squash inside a note survives.
+    for (int n = 0; n < nS; ++n)
+    {
+        float i2 = 0.0f, o2 = 0.0f;
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            const float x = drySnap.getReadPointer (ch)[n];
+            const float y = buffer.getReadPointer (ch)[n];
+            i2 += x * x; o2 += y * y;
+        }
+        inMs  = levelCoef * inMs  + (1.0f - levelCoef) * i2;
+        outMs = levelCoef * outMs + (1.0f - levelCoef) * o2;
+        const float g = juce::jlimit (0.5f, 2.0f, std::sqrt ((inMs + 1.0e-10f) / (outMs + 1.0e-10f)));
+        for (int ch = 0; ch < nCh; ++ch) buffer.getWritePointer (ch)[n] *= g;
+    }
+
+    // The machine's output is what the listener hears as "dry"; the space is
+    // fed from it through a high-passed send.
+    for (int ch = 0; ch < nCh; ++ch)
+    {
+        machine.copyFrom (ch, 0, buffer, ch, 0, nS);
+        auto* d = buffer.getWritePointer (ch);
+        for (int n = 0; n < nS; ++n) d[n] = inputHp[ch].process (d[n]);
+    }
 
     // ── space, with the shimmer inside the tank's feedback ───────────────
     auto* wl = wetBus.getWritePointer (0);
@@ -238,7 +280,7 @@ void DaydreamEngine::process (juce::AudioBuffer<float>& buffer) noexcept
         for (int ch = 0; ch < nCh; ++ch)
         {
             const float wet = outputLp[ch].process (wetBus.getReadPointer (ch)[n]) * duck;
-            buffer.getWritePointer (ch)[n] = drySnap.getReadPointer (ch)[n] * dg + wet * wg;
+            buffer.getWritePointer (ch)[n] = machine.getReadPointer (ch)[n] * dg + wet * wg;
         }
     }
 
