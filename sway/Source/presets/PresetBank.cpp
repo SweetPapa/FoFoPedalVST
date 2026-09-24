@@ -32,23 +32,23 @@ const std::vector<fofo::FactoryPreset>& getFactoryPresets()
 
         { "Slow Chorus", "wide and unhurried under a clean guitar or a pad",
           { { ParamID::move, 40.0f }, { ParamID::rate, 22.0f },
-            { ParamID::color, 58.0f }, { ParamID::mix, 60.0f }, { ParamID::mode, 1.0f } } },
+            { ParamID::color, 58.0f }, { ParamID::mix, 75.0f }, { ParamID::mode, 1.0f } } },
 
         { "Lush Ensemble", "several voices' worth of width without a pitch shifter",
           { { ParamID::move, 65.0f }, { ParamID::rate, 35.0f },
-            { ParamID::color, 62.0f }, { ParamID::mix, 72.0f }, { ParamID::mode, 1.0f } } },
+            { ParamID::color, 62.0f }, { ParamID::mix, 88.0f }, { ParamID::mode, 1.0f } } },
 
         { "Vibrato", "fast and deep with the dry gone — the sound leaves the centre",
           { { ParamID::move, 80.0f }, { ParamID::rate, 55.0f },
             { ParamID::color, 50.0f }, { ParamID::mix, 100.0f }, { ParamID::mode, 1.0f } } },
 
         { "Breathing Pad", "long swells that lean on the beat rather than chop it",
-          { { ParamID::move, 42.0f }, { ParamID::rate, 20.0f },
+          { { ParamID::move, 58.0f }, { ParamID::rate, 20.0f },
             { ParamID::color, 66.0f }, { ParamID::mix, 85.0f }, { ParamID::mode, 2.0f } } },
 
         { "Sidechain Pump", "the four-on-the-floor duck, without routing a compressor",
           { { ParamID::move, 58.0f }, { ParamID::rate, 50.0f },
-            { ParamID::color, 48.0f }, { ParamID::mix, 100.0f }, { ParamID::mode, 2.0f } } },
+            { ParamID::color, 80.0f }, { ParamID::mix, 100.0f }, { ParamID::mode, 2.0f } } },
     };
 
     return bank;

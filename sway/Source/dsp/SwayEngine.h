@@ -90,6 +90,7 @@ private:
     float rate01  { 0.35f };
     float color01 { 0.50f };
     float mix01   { 1.00f };
+    float tapePush { 1.0f };      // pre-gain into the record head
 
     // ── Tape ─────────────────────────────────────────────────────────────
     fofo::ModMatrix           tapeMod;
