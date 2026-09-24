@@ -17,6 +17,11 @@
 //           sounds like it is doing less, so this is guarded too.
 //   side    side/mid energy of the output for a mono input — how wide it is.
 //
+// and then holds every pedal to three floors: its weakest preset changes the
+// sound at least as much as a 3 dB treble shelf, its default preset is
+// plainly audible, and nothing gets more than 5 dB quieter. A voicing change
+// that slides a pedal back toward timid fails CI instead of shipping.
+//
 // FOFO_IMPACT_ONLY=1 runs only this suite: the fast loop while voicing.
 
 #include "TestHarness.h"
@@ -169,6 +174,47 @@ void row (const char* pedal, const juce::String& name, Result hot, Result nom)
     std::printf ("  %-12s %-20s | -6dBFS pk: change %5.2f  level %+5.1f  side %+6.1f | -18dBFS pk: change %5.2f  level %+5.1f\n",
                  pedal, name.toRawUTF8(), hot.changeDb, hot.levelDb, hot.widthDb, nom.changeDb, nom.levelDb);
 }
+// The floors. A preset may be subtle, but it may not be inaudible, and a
+// pedal may not get quieter as it works — the two things v2 got wrong.
+constexpr double kEveryPresetFloor  = 1.0;   // a +3 dB treble shelf
+constexpr double kDefaultFloor      = 1.75;  // plainly there, first time it loads
+constexpr double kQuietestAllowedDb = -5.0;
+
+struct Judged { juce::String name; double change, level; bool isDefault; };
+
+void judge (const char* pedal, const std::vector<Judged>& rows)
+{
+    const Judged* weakest = nullptr;
+    const Judged* quietest = nullptr;
+    const Judged* dflt = nullptr;
+    for (auto& r : rows)
+    {
+        if (weakest  == nullptr || r.change < weakest->change) weakest  = &r;
+        if (quietest == nullptr || r.level  < quietest->level) quietest = &r;
+        if (r.isDefault) dflt = &r;
+    }
+    const juce::String P (pedal);
+    t::ok (weakest->change >= kEveryPresetFloor,
+           (P + ": every preset changes the sound at least as much as a 3 dB shelf").toStdString(),
+           (weakest->name + t::fmt (" is weakest at %.2f", weakest->change)).toStdString());
+    t::ok (dflt != nullptr && dflt->change >= kDefaultFloor,
+           (P + ": the default preset is plainly audible").toStdString(),
+           dflt ? (dflt->name + t::fmt (" at %.2f", dflt->change)).toStdString() : std::string ("no default"));
+    t::ok (quietest->level > kQuietestAllowedDb,
+           (P + ": no preset gets more than 5 dB quieter").toStdString(),
+           (quietest->name + t::fmt (" is quietest at %+.1f dB", quietest->level)).toStdString());
+}
+
+// Measure a preset at both input levels, print its row, and keep the worse
+// of the two readings for judging.
+template <typename Run>
+void measureInto (std::vector<Judged>& out, const char* pedal, const juce::String& name, bool isDefault,
+                  const std::vector<float>& hotIn, const std::vector<float>& nomIn, Run&& run)
+{
+    const Result hot = run (hotIn), nom = run (nomIn);
+    row (pedal, name, hot, nom);
+    out.push_back ({ name, std::min (hot.changeDb, nom.changeDb), std::min (hot.levelDb, nom.levelDb), isDefault });
+}
 } // namespace
 
 void runImpactTests()
@@ -176,7 +222,7 @@ void runImpactTests()
     const auto hotIn = guitar (0.5f);     // -6 dBFS peak
     const auto nomIn = guitar (0.125f);   // -18 dBFS peak
 
-    auto both = [&] (auto makeAndRun) { return std::pair<Result, Result> { makeAndRun (hotIn), makeAndRun (nomIn) }; };
+    auto both = [&] (auto&& run) { return std::pair<Result, Result> { run (hotIn), run (nomIn) }; };
 
     t::section ("IMPACT — reference effects, for scale");
 
@@ -208,76 +254,85 @@ void runImpactTests()
 
     t::section ("IMPACT — every shipping preset");
 
-    for (auto& p : sway::getFactoryPresets())
+    // Walk a bank, measuring each preset with `run (preset, input)`.
+    auto bank = [&] (const char* pedal, const auto& presets, int defaultIndex, auto&& run)
     {
-        auto r = both ([&] (const std::vector<float>& in)
+        std::vector<Judged> rows;
+        for (int i = 0; i < (int) presets.size(); ++i)
         {
-            sway::SwayEngine e; e.prepare (spec());
-            e.setMove01 (pv (p, "move", 45) * 0.01f); e.setRate01 (pv (p, "rate", 35) * 0.01f);
-            e.setColor01 (pv (p, "color", 50) * 0.01f); e.setMix01 (pv (p, "mix", 100) * 0.01f);
-            e.setMode ((sway::SwayEngine::Mode) (int) pv (p, "mode", 0));
-            return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
-        });
-        row ("SWAY", p.name, r.first, r.second);
-    }
-    for (auto& p : bkpr::getFactoryPresets())
-    {
-        auto r = both ([&] (const std::vector<float>& in)
-        {
-            bkpr::BackporchEngine e; e.prepare (spec());
-            e.setSpace01 (pv (p, "space", 45) * 0.01f); e.setTone01 (pv (p, "tone", 45) * 0.01f);
-            e.setDuck01 (pv (p, "duck", 35) * 0.01f); e.setMix01 (pv (p, "mix", 40) * 0.01f);
-            e.setMode ((bkpr::BackporchEngine::Mode) (int) pv (p, "mode", 1));
-            return measure (in, 0, [&] (auto& b) { e.process (b); });
-        });
-        row ("BACKPORCH", p.name, r.first, r.second);
-    }
-    for (auto& p : dbl::getFactoryPresets())
-    {
-        auto r = both ([&] (const std::vector<float>& in)
-        {
-            dbl::DoubleEngine e; e.prepare (spec());
-            e.setThick01 (pv (p, "thick", 50) * 0.01f); e.setWide01 (pv (p, "wide", 70) * 0.01f);
-            e.setHuman01 (pv (p, "human", 50) * 0.01f); e.setMix01 (pv (p, "mix", 60) * 0.01f);
-            e.setMode ((dbl::DoubleEngine::Mode) (int) pv (p, "mode", 0));
-            return measure (in, 0, [&] (auto& b) { e.process (b); });
-        });
-        row ("DOUBLE", p.name, r.first, r.second);
-    }
-    for (auto& p : daydream::getFactoryPresets())
-    {
-        auto r = both ([&] (const std::vector<float>& in)
-        {
-            daydream::DaydreamEngine e; e.setDream01 (pv (p, "dream", 35) * 0.01f); e.prepare (spec());
-            return measure (in, 0, [&] (auto& b) { e.process (b); });
-        });
-        row ("DAYDREAM", p.name, r.first, r.second);
-    }
-    for (auto& p : drip::getFactoryPresets())
-    {
-        auto r = both ([&] (const std::vector<float>& in)
-        {
-            drip::DreamRipperEngine e;
-            e.setRip01 (pv (p, "rip", 50) * 0.01f); e.setTight01 (pv (p, "tight", 50) * 0.01f);
-            e.setScoop01 (pv (p, "scoop", 50) * 0.01f); e.setCab01 (pv (p, "cab", 50) * 0.01f);
-            e.setLevel01 (pv (p, "level", 50) * 0.01f); e.setGate01 (pv (p, "gate", 0) * 0.01f);
-            e.setMix01 (pv (p, "mix", 100) * 0.01f);
-            e.setMode ((drip::DreamRipperEngine::Mode) (int) pv (p, "mode", 0));
-            e.prepare (spec());
-            return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
-        });
-        row ("DREAMRIPPER", p.name, r.first, r.second);
-    }
+            const auto& p = presets[(size_t) i];
+            measureInto (rows, pedal, juce::String (p.name), i == defaultIndex, hotIn, nomIn,
+                         [&] (const std::vector<float>& in) { return run (p, in); });
+        }
+        judge (pedal, rows);
+    };
 
-    using namespace fofopedal;
-    for (auto& c : CharacterBank::kFactoryPresets)
+    bank ("SWAY", sway::getFactoryPresets(), sway::kDefaultPresetIndex,
+          [] (const fofo::FactoryPreset& p, const std::vector<float>& in)
     {
-        auto r = both ([&] (const std::vector<float>& in)
+        sway::SwayEngine e; e.prepare (spec());
+        e.setMove01 (pv (p, "move", 45) * 0.01f); e.setRate01 (pv (p, "rate", 35) * 0.01f);
+        e.setColor01 (pv (p, "color", 50) * 0.01f); e.setMix01 (pv (p, "mix", 100) * 0.01f);
+        e.setMode ((sway::SwayEngine::Mode) (int) pv (p, "mode", 0));
+        return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
+    });
+
+    bank ("BACKPORCH", bkpr::getFactoryPresets(), bkpr::kDefaultPresetIndex,
+          [] (const fofo::FactoryPreset& p, const std::vector<float>& in)
+    {
+        bkpr::BackporchEngine e; e.prepare (spec());
+        e.setSpace01 (pv (p, "space", 45) * 0.01f); e.setTone01 (pv (p, "tone", 45) * 0.01f);
+        e.setDuck01 (pv (p, "duck", 35) * 0.01f); e.setMix01 (pv (p, "mix", 40) * 0.01f);
+        e.setMode ((bkpr::BackporchEngine::Mode) (int) pv (p, "mode", 1));
+        return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
+    });
+
+    bank ("DOUBLE", dbl::getFactoryPresets(), dbl::kDefaultPresetIndex,
+          [] (const fofo::FactoryPreset& p, const std::vector<float>& in)
+    {
+        dbl::DoubleEngine e; e.prepare (spec());
+        e.setThick01 (pv (p, "thick", 50) * 0.01f); e.setWide01 (pv (p, "wide", 70) * 0.01f);
+        e.setHuman01 (pv (p, "human", 50) * 0.01f); e.setMix01 (pv (p, "mix", 60) * 0.01f);
+        e.setMode ((dbl::DoubleEngine::Mode) (int) pv (p, "mode", 0));
+        return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
+    });
+
+    bank ("DAYDREAM", daydream::getFactoryPresets(), daydream::kDefaultPresetIndex,
+          [] (const fofo::FactoryPreset& p, const std::vector<float>& in)
+    {
+        daydream::DaydreamEngine e; e.setDream01 (pv (p, "dream", 35) * 0.01f); e.prepare (spec());
+        return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
+    });
+
+    bank ("DREAMRIPPER", drip::getFactoryPresets(), drip::kDefaultPresetIndex,
+          [] (const fofo::FactoryPreset& p, const std::vector<float>& in)
+    {
+        drip::DreamRipperEngine e;
+        e.setRip01 (pv (p, "rip", 50) * 0.01f); e.setTight01 (pv (p, "tight", 50) * 0.01f);
+        e.setScoop01 (pv (p, "scoop", 50) * 0.01f); e.setCab01 (pv (p, "cab", 50) * 0.01f);
+        e.setLevel01 (pv (p, "level", 50) * 0.01f); e.setGate01 (pv (p, "gate", 0) * 0.01f);
+        e.setMix01 (pv (p, "mix", 100) * 0.01f);
+        e.setMode ((drip::DreamRipperEngine::Mode) (int) pv (p, "mode", 0));
+        e.prepare (spec());
+        return measure (in, e.getLatencySamples(), [&] (auto& b) { e.process (b); });
+    });
+
+    // FOFOPEDAL's characters go through applyControls — the same front-panel
+    // mapping the plugin runs every block. Its default is character 0.
+    {
+        using namespace fofopedal;
+        std::vector<Judged> rows;
+        for (size_t i = 0; i < CharacterBank::kFactoryPresets.size(); ++i)
         {
-            FofoEngine e; e.prepare (spec());
-            applyControls (e, c);
-            return measure (in, e.getLatencySamples(), [&] (auto& b) { applyControls (e, c); e.process (b); });
-        });
-        row ("FOFOPEDAL", c.name, r.first, r.second);
+            const auto& c = CharacterBank::kFactoryPresets[i];
+            measureInto (rows, "FOFOPEDAL", juce::String (c.name), i == 0, hotIn, nomIn,
+                         [&] (const std::vector<float>& in)
+            {
+                FofoEngine e; e.prepare (spec());
+                applyControls (e, c);
+                return measure (in, e.getLatencySamples(), [&] (auto& b) { applyControls (e, c); e.process (b); });
+            });
+        }
+        judge ("FOFOPEDAL", rows);
     }
 }
